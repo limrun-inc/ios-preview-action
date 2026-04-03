@@ -15,6 +15,7 @@ on:
     types: [opened, synchronize, reopened, closed]
 
 permissions:
+  contents: read
   pull-requests: write
 
 jobs:
@@ -43,6 +44,7 @@ on:
     types: [opened, synchronize, reopened, closed]
 
 permissions:
+  contents: read
   pull-requests: write
 
 jobs:

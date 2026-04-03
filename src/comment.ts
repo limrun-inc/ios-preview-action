@@ -1,35 +1,52 @@
 import * as github from "@actions/github";
 
-const MARKER = "<!-- limrun-preview -->";
+function marker(platform: string): string {
+  return `<!-- limrun-preview-${platform} -->`;
+}
 
-function buildComment(sha: string, previewUrl: string, consoleUrl: string): string {
+const platformLabel: Record<string, string> = {
+  ios: "iOS",
+  android: "Android",
+};
+
+function buildComment(platform: string, sha: string, previewUrl: string): string {
   return [
     "**Limrun Preview**",
     "",
-    `Built from \`${sha.slice(0, 7)}\` | [Open Preview](${previewUrl})`,
+    `| Platform | Commit | Preview |`,
+    `|---|---|---|`,
+    `| ${platformLabel[platform] || platform} | \`${sha.slice(0, 7)}\` | [Open Preview →](${previewUrl}) |`,
     "",
-    `Reviewer must be signed into [${new URL(consoleUrl).host}](${consoleUrl}) as an org member.`,
+    "Reviewer must be a member of the organization on Limrun.",
     "",
-    MARKER,
+    marker(platform),
   ].join("\n");
 }
 
-function buildClosedComment(): string {
-  return ["**Limrun Preview**", "", "Preview removed. This PR is closed.", "", MARKER].join("\n");
+function buildClosedComment(platform: string): string {
+  return [
+    "**Limrun Preview**",
+    "",
+    `${platformLabel[platform] || platform} preview removed. This PR is closed.`,
+    "",
+    marker(platform),
+  ].join("\n");
 }
 
 async function findComment(
   octokit: ReturnType<typeof github.getOctokit>,
   owner: string,
   repo: string,
-  prNumber: number
+  prNumber: number,
+  platform: string
 ): Promise<number | null> {
+  const m = marker(platform);
   for await (const { data: comments } of octokit.paginate.iterator(
     octokit.rest.issues.listComments,
     { owner, repo, issue_number: prNumber, per_page: 100 }
   )) {
     for (const comment of comments) {
-      if (comment.body?.includes(MARKER)) {
+      if (comment.body?.includes(m)) {
         return comment.id;
       }
     }
@@ -42,13 +59,13 @@ export async function postOrUpdateComment(
   owner: string,
   repo: string,
   prNumber: number,
+  platform: string,
   sha: string,
-  previewUrl: string,
-  consoleUrl: string
+  previewUrl: string
 ): Promise<void> {
   const octokit = github.getOctokit(token);
-  const body = buildComment(sha, previewUrl, consoleUrl);
-  const existingId = await findComment(octokit, owner, repo, prNumber);
+  const body = buildComment(platform, sha, previewUrl);
+  const existingId = await findComment(octokit, owner, repo, prNumber, platform);
 
   if (existingId) {
     await octokit.rest.issues.updateComment({ owner, repo, comment_id: existingId, body });
@@ -61,16 +78,17 @@ export async function updateCommentClosed(
   token: string,
   owner: string,
   repo: string,
-  prNumber: number
+  prNumber: number,
+  platform: string
 ): Promise<void> {
   const octokit = github.getOctokit(token);
-  const existingId = await findComment(octokit, owner, repo, prNumber);
+  const existingId = await findComment(octokit, owner, repo, prNumber, platform);
   if (existingId) {
     await octokit.rest.issues.updateComment({
       owner,
       repo,
       comment_id: existingId,
-      body: buildClosedComment(),
+      body: buildClosedComment(platform),
     });
   }
 }

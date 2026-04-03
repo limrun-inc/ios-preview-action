@@ -35912,35 +35912,50 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.postOrUpdateComment = postOrUpdateComment;
 exports.updateCommentClosed = updateCommentClosed;
 const github = __importStar(__nccwpck_require__(3228));
-const MARKER = "<!-- limrun-preview -->";
-function buildComment(sha, previewUrl, consoleUrl) {
+function marker(platform) {
+    return `<!-- limrun-preview-${platform} -->`;
+}
+const platformLabel = {
+    ios: "iOS",
+    android: "Android",
+};
+function buildComment(platform, sha, previewUrl) {
     return [
         "**Limrun Preview**",
         "",
-        `Built from \`${sha.slice(0, 7)}\` | [Open Preview](${previewUrl})`,
+        `| Platform | Commit | Preview |`,
+        `|---|---|---|`,
+        `| ${platformLabel[platform] || platform} | \`${sha.slice(0, 7)}\` | [Open Preview →](${previewUrl}) |`,
         "",
-        `Reviewer must be signed into [${new URL(consoleUrl).host}](${consoleUrl}) as an org member.`,
+        "Reviewer must be a member of the organization on Limrun.",
         "",
-        MARKER,
+        marker(platform),
     ].join("\n");
 }
-function buildClosedComment() {
-    return ["**Limrun Preview**", "", "Preview removed. This PR is closed.", "", MARKER].join("\n");
+function buildClosedComment(platform) {
+    return [
+        "**Limrun Preview**",
+        "",
+        `${platformLabel[platform] || platform} preview removed. This PR is closed.`,
+        "",
+        marker(platform),
+    ].join("\n");
 }
-async function findComment(octokit, owner, repo, prNumber) {
+async function findComment(octokit, owner, repo, prNumber, platform) {
+    const m = marker(platform);
     for await (const { data: comments } of octokit.paginate.iterator(octokit.rest.issues.listComments, { owner, repo, issue_number: prNumber, per_page: 100 })) {
         for (const comment of comments) {
-            if (comment.body?.includes(MARKER)) {
+            if (comment.body?.includes(m)) {
                 return comment.id;
             }
         }
     }
     return null;
 }
-async function postOrUpdateComment(token, owner, repo, prNumber, sha, previewUrl, consoleUrl) {
+async function postOrUpdateComment(token, owner, repo, prNumber, platform, sha, previewUrl) {
     const octokit = github.getOctokit(token);
-    const body = buildComment(sha, previewUrl, consoleUrl);
-    const existingId = await findComment(octokit, owner, repo, prNumber);
+    const body = buildComment(platform, sha, previewUrl);
+    const existingId = await findComment(octokit, owner, repo, prNumber, platform);
     if (existingId) {
         await octokit.rest.issues.updateComment({ owner, repo, comment_id: existingId, body });
     }
@@ -35948,15 +35963,15 @@ async function postOrUpdateComment(token, owner, repo, prNumber, sha, previewUrl
         await octokit.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
     }
 }
-async function updateCommentClosed(token, owner, repo, prNumber) {
+async function updateCommentClosed(token, owner, repo, prNumber, platform) {
     const octokit = github.getOctokit(token);
-    const existingId = await findComment(octokit, owner, repo, prNumber);
+    const existingId = await findComment(octokit, owner, repo, prNumber, platform);
     if (existingId) {
         await octokit.rest.issues.updateComment({
             owner,
             repo,
             comment_id: existingId,
-            body: buildClosedComment(),
+            body: buildClosedComment(platform),
         });
     }
 }
@@ -36018,7 +36033,7 @@ async function run() {
     const consoleUrl = process.env.LIMRUN_CONSOLE_URL || "https://console.limrun.com";
     const platform = core.getInput("platform");
     const ghToken = core.getInput("github-token");
-    const client = new api_1.default({ apiKey, baseURL: process.env.LIMRUN_API_URL });
+    const client = new api_1.default({ apiKey });
     if (!["ios", "android"].includes(platform)) {
         core.setFailed(`Invalid platform "${platform}". Must be "ios" or "android".`);
         return;
@@ -36049,7 +36064,7 @@ async function run() {
         }
         if (ghToken) {
             try {
-                await (0, comment_1.updateCommentClosed)(ghToken, owner, repo, prNumber);
+                await (0, comment_1.updateCommentClosed)(ghToken, owner, repo, prNumber, platform);
             }
             catch (err) {
                 core.warning(`Failed to update comment: ${err}`);
@@ -36089,7 +36104,7 @@ async function run() {
     core.setOutput("asset-name", assetName);
     if (ghToken) {
         try {
-            await (0, comment_1.postOrUpdateComment)(ghToken, owner, repo, prNumber, sha, previewUrl, consoleUrl);
+            await (0, comment_1.postOrUpdateComment)(ghToken, owner, repo, prNumber, platform, sha, previewUrl);
             core.info("PR comment posted.");
         }
         catch (err) {

@@ -46,7 +46,7 @@ async function run(): Promise<void> {
     }
     if (ghToken) {
       try {
-        await updateCommentClosed(ghToken, owner, repo, prNumber);
+        await updateCommentClosed(ghToken, owner, repo, prNumber, platform);
       } catch (err) {
         core.warning(`Failed to update comment: ${err}`);
       }
@@ -90,7 +90,7 @@ async function run(): Promise<void> {
 
   if (ghToken) {
     try {
-      await postOrUpdateComment(ghToken, owner, repo, prNumber, sha, previewUrl, consoleUrl);
+      await postOrUpdateComment(ghToken, owner, repo, prNumber, platform, sha, previewUrl);
       core.info("PR comment posted.");
     } catch (err) {
       core.warning(`Failed to post comment: ${err}`);
