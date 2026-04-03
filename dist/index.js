@@ -36072,7 +36072,7 @@ async function run() {
         }
         return;
     }
-    if (!["opened", "synchronize", "reopened"].includes(action)) {
+    if (!["opened", "synchronize", "reopened", "labeled"].includes(action)) {
         core.info(`Ignoring PR action "${action}", nothing to do.`);
         return;
     }

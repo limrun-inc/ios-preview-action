@@ -54,7 +54,7 @@ async function run(): Promise<void> {
     return;
   }
 
-  if (!["opened", "synchronize", "reopened"].includes(action as string)) {
+  if (!["opened", "synchronize", "reopened", "labeled"].includes(action as string)) {
     core.info(`Ignoring PR action "${action}", nothing to do.`);
     return;
   }
