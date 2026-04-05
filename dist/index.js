@@ -36049,7 +36049,7 @@ async function run() {
     const prNumber = pr.number;
     const sha = pr.head.sha;
     const action = payload.action;
-    const assetName = `preview/${owner}/${repo}/pr-${prNumber}`;
+    const assetName = `preview/${owner}/${repo}/pr-${prNumber}-${platform}`;
     if (assetName.includes("..")) {
         core.setFailed("Asset name must not contain '..'");
         return;
