@@ -17,22 +17,28 @@ export async function uploadAsset(
   appPath: string,
   assetName: string
 ): Promise<UploadResult> {
-  const tarPath = join(tmpdir(), `limrun-preview-${Date.now()}.tar.gz`);
-  try {
-    execFileSync("tar", ["-czf", tarPath, "-C", dirname(appPath), basename(appPath)]);
+  // iOS .app bundles are directories and need tar. Android APKs are
+  // single files and must be uploaded as-is (the emulator expects raw APK).
+  let uploadPath = appPath;
+  let tarPath: string | null = null;
 
-    const { size } = statSync(tarPath);
+  if (statSync(appPath).isDirectory()) {
+    tarPath = join(tmpdir(), `limrun-preview-${Date.now()}.tar.gz`);
+    execFileSync("tar", ["-czf", tarPath, "-C", dirname(appPath), basename(appPath)]);
+    uploadPath = tarPath;
+  }
+
+  try {
+    const { size } = statSync(uploadPath);
     if (size > MAX_SIZE_BYTES) {
-      throw new Error(`Archive is ${Math.round(size / 1024 / 1024)}MB, exceeds 500MB limit`);
+      throw new Error(`File is ${Math.round(size / 1024 / 1024)}MB, exceeds 500MB limit`);
     }
 
-    const asset = await client.assets.getOrUpload({ path: tarPath, name: assetName });
+    const asset = await client.assets.getOrUpload({ path: uploadPath, name: assetName });
     return { id: asset.id, name: asset.name };
   } finally {
-    try {
-      unlinkSync(tarPath);
-    } catch {
-      // ignore cleanup errors
+    if (tarPath) {
+      try { unlinkSync(tarPath); } catch { /* ignore */ }
     }
   }
 }

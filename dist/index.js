@@ -36134,22 +36134,29 @@ const os_1 = __nccwpck_require__(857);
 const path_1 = __nccwpck_require__(6928);
 const MAX_SIZE_BYTES = 500 * 1024 * 1024; // 500MB
 async function uploadAsset(client, appPath, assetName) {
-    const tarPath = (0, path_1.join)((0, os_1.tmpdir)(), `limrun-preview-${Date.now()}.tar.gz`);
-    try {
+    // iOS .app bundles are directories and need tar. Android APKs are
+    // single files and must be uploaded as-is (the emulator expects raw APK).
+    let uploadPath = appPath;
+    let tarPath = null;
+    if ((0, fs_1.statSync)(appPath).isDirectory()) {
+        tarPath = (0, path_1.join)((0, os_1.tmpdir)(), `limrun-preview-${Date.now()}.tar.gz`);
         (0, child_process_1.execFileSync)("tar", ["-czf", tarPath, "-C", (0, path_1.dirname)(appPath), (0, path_1.basename)(appPath)]);
-        const { size } = (0, fs_1.statSync)(tarPath);
+        uploadPath = tarPath;
+    }
+    try {
+        const { size } = (0, fs_1.statSync)(uploadPath);
         if (size > MAX_SIZE_BYTES) {
-            throw new Error(`Archive is ${Math.round(size / 1024 / 1024)}MB, exceeds 500MB limit`);
+            throw new Error(`File is ${Math.round(size / 1024 / 1024)}MB, exceeds 500MB limit`);
         }
-        const asset = await client.assets.getOrUpload({ path: tarPath, name: assetName });
+        const asset = await client.assets.getOrUpload({ path: uploadPath, name: assetName });
         return { id: asset.id, name: asset.name };
     }
     finally {
-        try {
-            (0, fs_1.unlinkSync)(tarPath);
-        }
-        catch {
-            // ignore cleanup errors
+        if (tarPath) {
+            try {
+                (0, fs_1.unlinkSync)(tarPath);
+            }
+            catch { /* ignore */ }
         }
     }
 }
