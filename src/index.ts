@@ -4,14 +4,68 @@ import Limrun from "@limrun/api";
 import { existsSync, statSync } from "fs";
 import { postOrUpdateComment, updateCommentClosed } from "./comment";
 
-async function run(): Promise<void> {
+const CLEANUP_LABEL_SELECTOR_STATE = "cleanup-label-selector";
+const platform = "ios";
+
+function getPreviewLabels(owner: string, repo: string, prNumber: number): Record<string, string> {
+  return {
+    managed_by: "preview-action",
+    github_owner: owner,
+    github_repo: repo,
+    github_pr: String(prNumber),
+    github_platform: platform,
+  };
+}
+
+function toLabelSelector(labels: Record<string, string>): string {
+  return Object.entries(labels)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(",");
+}
+
+async function cleanupXcodeInstances(client: Limrun, labelSelector: string): Promise<void> {
+  const page = await client.xcodeInstances.list({
+    labelSelector,
+    state: "creating,assigned,ready,unknown",
+  });
+  const instances = page.items ?? page.getPaginatedItems();
+
+  if (instances.length === 0) {
+    core.info(`No Xcode instances found for label selector "${labelSelector}".`);
+    return;
+  }
+
+  for (const instance of instances) {
+    try {
+      core.info(`Deleting Xcode instance ${instance.metadata.id}...`);
+      await client.xcodeInstances.delete(instance.metadata.id);
+    } catch (err) {
+      core.warning(`Failed to delete Xcode instance ${instance.metadata.id}: ${err}`);
+    }
+  }
+}
+
+async function runPost(): Promise<void> {
+  const apiKey = core.getInput("api-key", { required: true });
+  core.setSecret(apiKey);
+
+  const labelSelector = core.getState(CLEANUP_LABEL_SELECTOR_STATE);
+  if (!labelSelector) {
+    core.info("No Xcode cleanup state found, skipping post cleanup.");
+    return;
+  }
+
+  const client = new Limrun({ apiKey });
+  await cleanupXcodeInstances(client, labelSelector);
+}
+
+async function runMain(): Promise<void> {
   const apiKey = core.getInput("api-key", { required: true });
   core.setSecret(apiKey);
   const consoleUrl = process.env.LIMRUN_CONSOLE_URL || "https://console.limrun.com";
   const ghToken = core.getInput("github-token");
   const client = new Limrun({ apiKey });
   const projectPath = core.getInput("project-path") || ".";
-  const platform = "ios";
 
   const { payload } = github.context;
   const pr = payload.pull_request;
@@ -25,6 +79,8 @@ async function run(): Promise<void> {
   const prNumber = pr.number;
   const sha = pr.head.sha;
   const action = payload.action;
+  const labels = getPreviewLabels(owner, repo, prNumber);
+  const labelSelector = toLabelSelector(labels);
 
   const assetName = `preview/${owner}/${repo}/pr-${prNumber}-${platform}`;
   if (assetName.includes("..")) {
@@ -32,25 +88,25 @@ async function run(): Promise<void> {
     return;
   }
 
+  core.saveState(CLEANUP_LABEL_SELECTOR_STATE, labelSelector);
+
   if (action === "closed") {
-    core.info("PR closed, cleaning up asset...");
     try {
-      const assets = await client.assets.list({ nameFilter: assetName });
-      const asset = assets.find((a) => a.name === assetName);
-      if (!asset) {
-        core.warning(`Asset "${assetName}" not found.`);
-        return;
-      }
-      await client.assets.delete(asset.id);
-    } catch (err) {
-      core.warning(`Failed to delete asset: ${err}`);
-    }
-    if (ghToken) {
+      core.info("PR closed, cleaning up asset...");
       try {
-        await updateCommentClosed(ghToken, owner, repo, prNumber, platform);
+        await cleanupXcodeInstances(client, labelSelector);
       } catch (err) {
-        core.warning(`Failed to update comment: ${err}`);
+        core.warning(`Failed to delete asset: ${err}`);
       }
+      if (ghToken) {
+        try {
+          await updateCommentClosed(ghToken, owner, repo, prNumber, platform);
+        } catch (err) {
+          core.warning(`Failed to update comment: ${err}`);
+        }
+      }
+    } catch (err) {
+      core.warning(`Failed to cleanup asset: ${err}`);
     }
     return;
   }
@@ -69,7 +125,6 @@ async function run(): Promise<void> {
     return;
   }
 
-  let xcodeInstanceId: string | undefined;
   try {
     core.info("Creating Xcode instance...");
     const xcodeInstance = await client.xcodeInstances.create({
@@ -77,17 +132,10 @@ async function run(): Promise<void> {
       reuseIfExists: true,
       metadata: {
         displayName: `${repo} PR #${prNumber} preview`,
-        labels: {
-          managed_by: "preview-action",
-          github_owner: owner,
-          github_repo: repo,
-          github_pr: String(prNumber),
-          github_platform: platform,
-        },
+        labels,
       },
     });
-    xcodeInstanceId = xcodeInstance.metadata.id;
-    core.info(`Xcode instance ready: ${xcodeInstanceId}`);
+    core.info(`Xcode instance ready: ${xcodeInstance.metadata.id}`);
 
     const xcode = await client.xcodeInstances.createClient({ instance: xcodeInstance });
     core.info(`Syncing project from ${projectPath}...`);
@@ -105,14 +153,7 @@ async function run(): Promise<void> {
       throw new Error(`xcodebuild failed with exit code ${result.exitCode}`);
     }
   } finally {
-    if (xcodeInstanceId) {
-      try {
-        core.info(`Deleting Xcode instance ${xcodeInstanceId}...`);
-        await client.xcodeInstances.delete(xcodeInstanceId);
-      } catch (err) {
-        core.warning(`Failed to delete Xcode instance ${xcodeInstanceId}: ${err}`);
-      }
-    }
+    await cleanupXcodeInstances(client, labelSelector);
   }
 
   const previewUrl = `${consoleUrl}/preview?asset=${encodeURIComponent(assetName)}&platform=${platform}`;
@@ -145,4 +186,7 @@ function logChunk(
   }
 }
 
-run().catch((err) => core.setFailed(err instanceof Error ? err.message : String(err)));
+const isPostRun = Boolean(core.getState(CLEANUP_LABEL_SELECTOR_STATE));
+const entrypoint = isPostRun ? runPost : runMain;
+
+entrypoint().catch((err) => core.setFailed(err instanceof Error ? err.message : String(err)));

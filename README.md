@@ -6,7 +6,7 @@ GitHub Action that builds iOS apps on a temporary [Limrun](https://limrun.com) X
 
 ## Usage
 
-The action creates a temporary Xcode instance, syncs your project, runs `xcodebuild`, uploads the resulting asset under a deterministic PR-scoped name, and posts the preview link. Make sure your workflow triggers include `closed` for cleanup, and has `pull-requests: write` permission for PR comments.
+The action creates a temporary Xcode instance, syncs your project, runs `xcodebuild`, uploads the resulting asset under a deterministic PR-scoped name, and posts the preview link. It also registers a GitHub Actions `post` step that deletes any matching Xcode instances by label as a final cleanup pass. Make sure your workflow triggers include `closed` for cleanup, and has `pull-requests: write` permission for PR comments.
 
 ### iOS
 

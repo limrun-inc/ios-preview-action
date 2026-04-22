@@ -74784,14 +74784,60 @@ const github = __importStar(__nccwpck_require__(3228));
 const api_1 = __importDefault(__nccwpck_require__(4915));
 const fs_1 = __nccwpck_require__(9896);
 const comment_1 = __nccwpck_require__(2246);
-async function run() {
+const CLEANUP_LABEL_SELECTOR_STATE = "cleanup-label-selector";
+const platform = "ios";
+function getPreviewLabels(owner, repo, prNumber) {
+    return {
+        managed_by: "preview-action",
+        github_owner: owner,
+        github_repo: repo,
+        github_pr: String(prNumber),
+        github_platform: platform,
+    };
+}
+function toLabelSelector(labels) {
+    return Object.entries(labels)
+        .map(([key, value]) => `${key}=${value}`)
+        .join(",");
+}
+async function cleanupXcodeInstances(client, labelSelector) {
+    const page = await client.xcodeInstances.list({
+        labelSelector,
+        state: "creating,assigned,ready,unknown",
+    });
+    const instances = page.items ?? page.getPaginatedItems();
+    if (instances.length === 0) {
+        core.info(`No Xcode instances found for label selector "${labelSelector}".`);
+        return;
+    }
+    for (const instance of instances) {
+        try {
+            core.info(`Deleting Xcode instance ${instance.metadata.id}...`);
+            await client.xcodeInstances.delete(instance.metadata.id);
+        }
+        catch (err) {
+            core.warning(`Failed to delete Xcode instance ${instance.metadata.id}: ${err}`);
+        }
+    }
+}
+async function runPost() {
+    const apiKey = core.getInput("api-key", { required: true });
+    core.setSecret(apiKey);
+    const labelSelector = core.getState(CLEANUP_LABEL_SELECTOR_STATE);
+    if (!labelSelector) {
+        core.info("No Xcode cleanup state found, skipping post cleanup.");
+        return;
+    }
+    const client = new api_1.default({ apiKey });
+    await cleanupXcodeInstances(client, labelSelector);
+}
+async function runMain() {
     const apiKey = core.getInput("api-key", { required: true });
     core.setSecret(apiKey);
     const consoleUrl = process.env.LIMRUN_CONSOLE_URL || "https://console.limrun.com";
     const ghToken = core.getInput("github-token");
     const client = new api_1.default({ apiKey });
     const projectPath = core.getInput("project-path") || ".";
-    const platform = "ios";
     const { payload } = github.context;
     const pr = payload.pull_request;
     if (!pr) {
@@ -74803,32 +74849,34 @@ async function run() {
     const prNumber = pr.number;
     const sha = pr.head.sha;
     const action = payload.action;
+    const labels = getPreviewLabels(owner, repo, prNumber);
+    const labelSelector = toLabelSelector(labels);
     const assetName = `preview/${owner}/${repo}/pr-${prNumber}-${platform}`;
     if (assetName.includes("..")) {
         core.setFailed("Asset name must not contain '..'");
         return;
     }
+    core.saveState(CLEANUP_LABEL_SELECTOR_STATE, labelSelector);
     if (action === "closed") {
-        core.info("PR closed, cleaning up asset...");
         try {
-            const assets = await client.assets.list({ nameFilter: assetName });
-            const asset = assets.find((a) => a.name === assetName);
-            if (!asset) {
-                core.warning(`Asset "${assetName}" not found.`);
-                return;
-            }
-            await client.assets.delete(asset.id);
-        }
-        catch (err) {
-            core.warning(`Failed to delete asset: ${err}`);
-        }
-        if (ghToken) {
+            core.info("PR closed, cleaning up asset...");
             try {
-                await (0, comment_1.updateCommentClosed)(ghToken, owner, repo, prNumber, platform);
+                await cleanupXcodeInstances(client, labelSelector);
             }
             catch (err) {
-                core.warning(`Failed to update comment: ${err}`);
+                core.warning(`Failed to delete asset: ${err}`);
             }
+            if (ghToken) {
+                try {
+                    await (0, comment_1.updateCommentClosed)(ghToken, owner, repo, prNumber, platform);
+                }
+                catch (err) {
+                    core.warning(`Failed to update comment: ${err}`);
+                }
+            }
+        }
+        catch (err) {
+            core.warning(`Failed to cleanup asset: ${err}`);
         }
         return;
     }
@@ -74844,7 +74892,6 @@ async function run() {
         core.setFailed(`project-path "${projectPath}" must be a directory.`);
         return;
     }
-    let xcodeInstanceId;
     try {
         core.info("Creating Xcode instance...");
         const xcodeInstance = await client.xcodeInstances.create({
@@ -74852,17 +74899,10 @@ async function run() {
             reuseIfExists: true,
             metadata: {
                 displayName: `${repo} PR #${prNumber} preview`,
-                labels: {
-                    managed_by: "preview-action",
-                    github_owner: owner,
-                    github_repo: repo,
-                    github_pr: String(prNumber),
-                    github_platform: platform,
-                },
+                labels,
             },
         });
-        xcodeInstanceId = xcodeInstance.metadata.id;
-        core.info(`Xcode instance ready: ${xcodeInstanceId}`);
+        core.info(`Xcode instance ready: ${xcodeInstance.metadata.id}`);
         const xcode = await client.xcodeInstances.createClient({ instance: xcodeInstance });
         core.info(`Syncing project from ${projectPath}...`);
         await xcode.sync(projectPath, { watch: false, install: false });
@@ -74877,15 +74917,7 @@ async function run() {
         }
     }
     finally {
-        if (xcodeInstanceId) {
-            try {
-                core.info(`Deleting Xcode instance ${xcodeInstanceId}...`);
-                await client.xcodeInstances.delete(xcodeInstanceId);
-            }
-            catch (err) {
-                core.warning(`Failed to delete Xcode instance ${xcodeInstanceId}: ${err}`);
-            }
-        }
+        await cleanupXcodeInstances(client, labelSelector);
     }
     const previewUrl = `${consoleUrl}/preview?asset=${encodeURIComponent(assetName)}&platform=${platform}`;
     core.info(`Preview URL: ${previewUrl}`);
@@ -74912,7 +74944,9 @@ function logChunk(chunk, log, prefix = "") {
         }
     }
 }
-run().catch((err) => core.setFailed(err instanceof Error ? err.message : String(err)));
+const isPostRun = Boolean(core.getState(CLEANUP_LABEL_SELECTOR_STATE));
+const entrypoint = isPostRun ? runPost : runMain;
+entrypoint().catch((err) => core.setFailed(err instanceof Error ? err.message : String(err)));
 
 
 /***/ }),
