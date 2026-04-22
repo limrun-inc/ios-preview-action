@@ -4,6 +4,7 @@ import Limrun from "@limrun/api";
 import { existsSync, statSync } from "fs";
 import { postOrUpdateComment, updateCommentClosed } from "./comment";
 
+const IS_POST_RUN_STATE = "is-post-run";
 const CLEANUP_LABEL_SELECTOR_STATE = "cleanup-label-selector";
 const platform = "ios";
 
@@ -62,6 +63,9 @@ async function runPost(): Promise<void> {
 async function runMain(): Promise<void> {
   const apiKey = core.getInput("api-key", { required: true });
   core.setSecret(apiKey);
+  // Mark the main step immediately so the GitHub Actions post hook
+  // always routes into runPost(), even if main exits early.
+  core.saveState(IS_POST_RUN_STATE, "true");
   const consoleUrl = process.env.LIMRUN_CONSOLE_URL || "https://console.limrun.com";
   const ghToken = core.getInput("github-token");
   const client = new Limrun({ apiKey });
@@ -186,7 +190,7 @@ function logChunk(
   }
 }
 
-const isPostRun = Boolean(core.getState(CLEANUP_LABEL_SELECTOR_STATE));
+const isPostRun = core.getState(IS_POST_RUN_STATE) === "true";
 const entrypoint = isPostRun ? runPost : runMain;
 
 entrypoint().catch((err) => core.setFailed(err instanceof Error ? err.message : String(err)));

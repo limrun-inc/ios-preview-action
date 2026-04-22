@@ -6,9 +6,7 @@ GitHub Action that builds iOS apps on a temporary [Limrun](https://limrun.com) X
 
 ## Usage
 
-The action creates a temporary Xcode instance, syncs your project, runs `xcodebuild`, uploads the resulting asset under a deterministic PR-scoped name, and posts the preview link. It also registers a GitHub Actions `post` step that deletes any matching Xcode instances by label as a final cleanup pass. Make sure your workflow triggers include `closed` for cleanup, and has `pull-requests: write` permission for PR comments.
-
-### iOS
+The action creates a temporary XCode instance in Limrun, builds the project and returns a preview link that lets you use the app in browser with an iOS Simulator
 
 ```yaml
 # In your existing workflow
@@ -31,7 +29,6 @@ jobs:
         with:
           project-path: .
           api-key: ${{ secrets.LIMRUN_API_KEY }}
-          platform: ios
 ```
 
 ## Setup
@@ -41,12 +38,6 @@ jobs:
 3. Add it as `LIMRUN_API_KEY` in your repo's Settings > Secrets and variables > Actions
 4. Add the preview step to your existing CI workflow (see examples above)
 5. Invite reviewers to your Limrun organization
-
-## What it does
-
-**On PR open or new commits:** creates a temporary Xcode instance, syncs the project, builds it remotely, uploads the produced asset, and posts a comment with a preview link. Reviewers click the link, sign into Limrun, and get a live interactive simulator in the browser.
-
-**On PR close:** deletes the asset and updates the comment.
 
 ## Inputs
 
