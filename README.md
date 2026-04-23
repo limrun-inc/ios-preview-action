@@ -28,14 +28,14 @@ jobs:
         uses: limrun-inc/preview-action@v1
         with:
           project-path: .
-          api-key: ${{ secrets.LIMRUN_API_KEY }}
+          api-key: ${{ secrets.LIM_API_KEY }}
 ```
 
 ## Setup
 
 1. Create a Limrun account at [console.limrun.com](https://console.limrun.com)
 2. Generate an API key in the console settings
-3. Add it as `LIMRUN_API_KEY` in your repo's Settings > Secrets and variables > Actions
+3. Add it as `LIM_API_KEY` in your repo's Settings > Secrets and variables > Actions
 4. Add the preview step to your existing CI workflow (see examples above)
 5. Invite reviewers to your Limrun organization
 
@@ -44,7 +44,7 @@ jobs:
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `project-path` | On open/sync | `.` | Directory to sync to the temporary Xcode instance. |
-| `api-key` | Yes | | Limrun API key. Pass as a secret: `${{ secrets.LIMRUN_API_KEY }}` |
+| `api-key` | Yes | | Limrun API key. Pass as a secret: `${{ secrets.LIM_API_KEY }}` |
 | `github-token` | No | `${{ github.token }}` | GitHub token for posting PR comments |
 
 ## Outputs
