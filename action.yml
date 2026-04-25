@@ -1,10 +1,26 @@
-name: 'Limrun Preview'
+name: 'Preview Links on PRs for iOS apps'
 description: 'Build iOS apps on Limrun Xcode and post preview links on pull requests'
 inputs:
   project-path:
     description: 'Path to the iOS project directory to sync to the Xcode instance. Default is the repository root.'
     required: false
     default: '.'
+  project:
+    description: 'Path to the iOS project file to build. Default is derived from the workspace file.'
+    required: false
+    default: ''
+  workspace:
+    description: 'Path to the iOS workspace file to build. Default is derived from the project file.'
+    required: false
+    default: ''
+  scheme:
+    description: 'The scheme to build. Default is derived from the project file.'
+    required: false
+    default: ''
+  sdk:
+    description: 'The SDK to build. Default is "iphonesimulator".'
+    required: false
+    default: 'iphonesimulator'
   api-key:
     description: 'Limrun API key (store as a repository secret)'
     required: true

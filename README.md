@@ -1,12 +1,11 @@
-# Limrun Preview Action
+# iOS Preview on Simulator Links for Pull Requests
 
-GitHub Action that builds iOS apps on a temporary [Limrun](https://limrun.com) Xcode instance, uploads the resulting asset via `xcodebuild`, and posts live preview links on pull requests.
+GitHub Action that builds iOS apps on a temporary [Limrun](https://limrun.com) Xcode instance and posts live preview links on pull requests where you can test your app
+in an iOS Simulator streamed to your browser.
 
 **This lets you build and preview iOS apps without a Mac.**
 
 ## Usage
-
-The action creates a temporary XCode instance in Limrun, builds the project and returns a preview link that lets you use the app in browser with an iOS Simulator
 
 ```yaml
 # In your existing workflow
@@ -25,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Preview
-        uses: limrun-inc/preview-action@v1
+        uses: limrun-inc/ios-preview-action@main
         with:
           project-path: .
           api-key: ${{ secrets.LIM_API_KEY }}
@@ -44,6 +43,10 @@ jobs:
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `project-path` | On open/sync | `.` | Directory to sync to the temporary Xcode instance. |
+| `project` | No | | Path to the iOS project file to build. |
+| `workspace` | No | | Path to the iOS workspace file to build. |
+| `scheme` | No | | The scheme to build. |
+| `sdk` | No | `iphonesimulator` | The SDK to build. |
 | `api-key` | Yes | | Limrun API key. Pass as a secret: `${{ secrets.LIM_API_KEY }}` |
 | `github-token` | No | `${{ github.token }}` | GitHub token for posting PR comments |
 

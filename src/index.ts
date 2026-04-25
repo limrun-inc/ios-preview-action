@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import Limrun from "@limrun/api";
+import Limrun, { type XcodeProjectConfig } from "@limrun/api";
 import { existsSync, statSync } from "fs";
 import { postOrUpdateComment, updateCommentClosed } from "./comment";
 
@@ -8,9 +8,22 @@ const IS_POST_RUN_STATE = "is-post-run";
 const CLEANUP_LABEL_SELECTOR_STATE = "cleanup-label-selector";
 const platform = "ios";
 
+function getOptionalInput(name: string): string | undefined {
+  return core.getInput(name) || undefined;
+}
+
+function getXcodeProjectConfig(): XcodeProjectConfig {
+  return {
+    project: getOptionalInput("project"),
+    workspace: getOptionalInput("workspace"),
+    scheme: getOptionalInput("scheme"),
+    sdk: core.getInput("sdk") as XcodeProjectConfig["sdk"],
+  };
+}
+
 function getPreviewLabels(owner: string, repo: string, prNumber: number): Record<string, string> {
   return {
-    managed_by: "preview-action",
+    managed_by: "ios-preview-action",
     github_owner: owner,
     github_repo: repo,
     github_pr: String(prNumber),
@@ -146,7 +159,7 @@ async function runMain(): Promise<void> {
     await xcode.sync(projectPath, { watch: false, install: false });
 
     core.info(`Building project and uploading asset "${assetName}"...`);
-    const build = xcode.xcodebuild(undefined, { upload: { assetName } });
+    const build = xcode.xcodebuild(getXcodeProjectConfig(), { upload: { assetName } });
 
     build.command.on("data", (chunk) => logChunk(chunk.toString(), core.info, "$ "));
     build.stdout.on("data", (chunk) => logChunk(chunk.toString(), core.info));
