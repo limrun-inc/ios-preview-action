@@ -81213,7 +81213,7 @@ const safeJSON = (text) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 //# sourceMappingURL=sleep.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/version.mjs
-const api_version_VERSION = '0.27.1'; // x-release-please-version
+const api_version_VERSION = '0.28.4'; // x-release-please-version
 //# sourceMappingURL=version.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/detect-platform.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
@@ -81723,6 +81723,8 @@ const formatRequestDetails = (details) => {
         details.headers = Object.fromEntries((details.headers instanceof Headers ? [...details.headers] : Object.entries(details.headers)).map(([name, value]) => [
             name,
             (name.toLowerCase() === 'authorization' ||
+                name.toLowerCase() === 'api-key' ||
+                name.toLowerCase() === 'x-api-key' ||
                 name.toLowerCase() === 'cookie' ||
                 name.toLowerCase() === 'set-cookie') ?
                 '***'
@@ -83057,6 +83059,30 @@ async function walkFiles(root, ignoreFn) {
     out.sort((a, b) => a.path.localeCompare(b.path));
     return out;
 }
+async function collectAdditionalFiles(additionalFiles) {
+    if (!additionalFiles || additionalFiles.length === 0) {
+        return [];
+    }
+    const out = [];
+    for (const additionalFile of additionalFiles) {
+        const remotePath = additionalFile.remotePath;
+        const absPath = external_path_.resolve(additionalFile.localPath);
+        const st = await external_fs_.promises.stat(absPath);
+        if (!st.isFile()) {
+            throw new Error(`additional file localPath must be a file: ${additionalFile.localPath}`);
+        }
+        const sha256 = await sha256FileHex(absPath);
+        out.push({
+            path: remotePath,
+            size: st.size,
+            sha256,
+            absPath,
+            mode: st.mode & 0o7777,
+        });
+    }
+    out.sort((a, b) => a.path.localeCompare(b.path));
+    return out;
+}
 let xdelta3WasmReady = null;
 async function loadXdelta3Wasm() {
     if (!xdelta3WasmReady) {
@@ -83159,7 +83185,9 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
     const slog = (level, msg) => log(level, `syncFolder: ${msg}`);
     const maxPatchBytes = opts.maxPatchBytes ?? 4 * 1024 * 1024;
     const files = await walkFiles(localFolderPath, opts.ignoreFn);
-    const fileMap = new Map(files.map((f) => [f.path, f]));
+    const additionalFiles = await collectAdditionalFiles(opts.additionalFiles);
+    const allFiles = [...files, ...additionalFiles].sort((a, b) => a.path.localeCompare(b.path));
+    const fileMap = new Map(allFiles.map((f) => [f.path, f]));
     const syncId = genId('sync');
     const rootName = external_path_.basename(external_path_.resolve(localFolderPath));
     const preferredCompression = external_zlib_.createZstdCompress ? 'zstd' : 'gzip';
@@ -83172,7 +83200,7 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
     // Build payload list by comparing against local basis cache (single-flight/watch assumes server matches cache).
     const encodeLimit = concurrencyLimit();
     const changed = [];
-    for (const f of files) {
+    for (const f of allFiles) {
         const basisPath = cacheGet(opts.basisCacheDir, f.path);
         if (!external_fs_.existsSync(basisPath)) {
             changed.push(f);
@@ -83219,7 +83247,12 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
         slog('debug', `full(file): ${f.path} size=${f.size}`);
         bytesSentFull += f.size;
         return {
-            payload: { kind: 'full', path: f.path, targetSha256: f.sha256.toLowerCase(), length: f.size },
+            payload: {
+                kind: 'full',
+                path: f.path,
+                targetSha256: f.sha256.toLowerCase(),
+                length: f.size,
+            },
             filePath: f.absPath,
         };
     });
@@ -83228,12 +83261,17 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
         rootName,
         install: opts.install,
         ...(opts.launchMode ? { launchMode: opts.launchMode } : {}),
-        files: files.map((f) => ({ path: f.path, size: f.size, sha256: f.sha256.toLowerCase(), mode: f.mode })),
+        files: allFiles.map((f) => ({
+            path: f.path,
+            size: f.size,
+            sha256: f.sha256.toLowerCase(),
+            mode: f.mode,
+        })),
         payloads: encodedPayloads.map((p) => p.payload),
     };
     const hasDelta = encodedPayloads.some((p) => p.payload.kind === 'delta');
     const compression = hasDelta ? 'identity' : preferredCompression;
-    slog('debug', `sync started files=${files.length}${reason ? ` reason=${reason}` : ''} compression=${compression}`);
+    slog('debug', `sync started files=${allFiles.length}${reason ? ` reason=${reason}` : ''} compression=${compression}`);
     const sendStart = nowMs();
     let resp;
     try {
@@ -83295,7 +83333,7 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
     }
     const tookMs = nowMs() - totalStart;
     const totalBytes = bytesSentFull + bytesSentDelta;
-    slog('debug', `sync finished files=${files.length} sent=${fmtBytes(totalBytes)} syncWork=${fmtMs(syncWorkMs)} total=${fmtMs(tookMs)}`);
+    slog('debug', `sync finished files=${allFiles.length} sent=${fmtBytes(totalBytes)} syncWork=${fmtMs(syncWorkMs)} total=${fmtMs(tookMs)}`);
     const out = {};
     if (resp.installedAppPath) {
         out.installedAppPath = resp.installedAppPath;
@@ -83304,18 +83342,23 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
         out.installedBundleId = resp.bundleId;
     }
     // Update local cache optimistically: after a successful sync, cache reflects current local tree.
-    for (const f of files) {
+    for (const f of allFiles) {
         await cachePut(opts.basisCacheDir, f.path, f.absPath);
     }
     return out;
 }
 //# sourceMappingURL=folder-sync.mjs.map
+// EXTERNAL MODULE: external "util"
+var external_util_ = __nccwpck_require__(9023);
 // EXTERNAL MODULE: ./node_modules/ignore/index.js
 var ignore = __nccwpck_require__(298);
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/folder-sync-ignore.mjs
 
 
 
+
+
+const execFileAsync = (0,external_util_.promisify)(external_child_process_namespaceObject.execFile);
 function normalizeRelativePath(relativePath) {
     return relativePath
         .split(external_path_.sep)
@@ -83323,9 +83366,38 @@ function normalizeRelativePath(relativePath) {
         .replace(/^\.\/+/, '')
         .replace(/\/+/g, '/');
 }
+async function getGitTrackedSets(rootDir) {
+    try {
+        const { stdout } = await execFileAsync('git', ['ls-files', '-z'], {
+            cwd: rootDir,
+            maxBuffer: 256 * 1024 * 1024,
+        });
+        const tracked = new Set();
+        const prefixes = new Set();
+        for (const file of stdout.split('\0')) {
+            if (!file)
+                continue;
+            tracked.add(file);
+            let idx = file.lastIndexOf('/');
+            while (idx > 0) {
+                prefixes.add(file.substring(0, idx));
+                idx = file.lastIndexOf('/', idx - 1);
+            }
+        }
+        return { tracked, prefixes };
+    }
+    catch {
+        return null;
+    }
+}
 async function folder_sync_ignore_createIgnoreFn(rootDir, options) {
     const rootResolved = external_path_.resolve(rootDir);
-    const ig = ignore();
+    // ignorecase: false matches git's default semantics. The package defaults to true,
+    // which silently drops e.g. `Vendor/` when .gitignore says `vendor/` (Ruby convention).
+    // allowRelativePaths: true so a `../`-style path doesn't throw mid-sync — treat it as
+    // "not ignored" and let it through, since the cost of dropping a needed file is higher
+    // than including an unexpected one.
+    const ig = ignore({ ignorecase: false, allowRelativePaths: true });
     const gitignorePath = external_path_.join(rootResolved, '.gitignore');
     try {
         const content = await external_fs_.promises.readFile(gitignorePath, 'utf-8');
@@ -83339,6 +83411,10 @@ async function folder_sync_ignore_createIgnoreFn(rootDir, options) {
         basisCacheRelative !== '.' &&
         basisCacheRelative !== '..' &&
         !basisCacheRelative.startsWith('../');
+    const trackedSets = await getGitTrackedSets(rootResolved);
+    const log = options.log;
+    // Dedupe by .gitignore rule so a single bad rule doesn't spam the log per matched file.
+    const warnedRules = new Set();
     return (relativePath) => {
         const normalized = normalizeRelativePath(relativePath);
         if (!normalized)
@@ -83359,8 +83435,23 @@ async function folder_sync_ignore_createIgnoreFn(rootDir, options) {
         }
         if (withoutTrailingSlash.endsWith('.xcconfig'))
             return false;
-        if (ig.ignores(normalized))
+        if (ig.ignores(normalized)) {
+            if (trackedSets &&
+                (trackedSets.tracked.has(withoutTrailingSlash) || trackedSets.prefixes.has(withoutTrailingSlash))) {
+                const rule = ig.test(normalized).rule?.pattern ?? '<unknown>';
+                if (!warnedRules.has(rule)) {
+                    warnedRules.add(rule);
+                    const msg = `.gitignore rule '${rule}' is dropping '${withoutTrailingSlash}', which is tracked in git. The remote build will not see this path. Remove or scope the rule if you need it synced.`;
+                    if (log) {
+                        log('warn', msg);
+                    }
+                    else {
+                        console.warn('[FolderSync]', msg);
+                    }
+                }
+            }
             return true;
+        }
         if (options.additional?.(normalized))
             return true;
         return false;
@@ -83393,6 +83484,38 @@ function xcode_instances_helpers_createLogger(logLevel) {
         }
     };
 }
+function normalizeWorkspaceRelativePath(remotePath) {
+    if (remotePath === '' ||
+        remotePath.startsWith('/') ||
+        remotePath.includes('\\') ||
+        remotePath.includes('\0')) {
+        throw new Error(`invalid sandbox home path from server: ${remotePath}`);
+    }
+    const parts = remotePath.split('/');
+    if (parts.some((part) => part === '' || part === '.' || part === '..')) {
+        throw new Error(`invalid sandbox home path from server: ${remotePath}`);
+    }
+    return parts.join('/');
+}
+async function fetchSandboxInfo(apiUrl, token) {
+    const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/info`, {
+        method: 'GET',
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+    const text = await res.text();
+    if (!res.ok) {
+        throw new Error(`GET /info failed: ${res.status} ${text}`);
+    }
+    const body = JSON.parse(text);
+    if (!body.homeDir) {
+        throw new Error('GET /info response is missing homeDir');
+    }
+    return {
+        homeDir: normalizeWorkspaceRelativePath(body.homeDir),
+    };
+}
 class XcodeInstances extends xcode_instances_XcodeInstances {
     async createClient(params) {
         let apiUrl;
@@ -83410,6 +83533,7 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
         }
         const log = xcode_instances_helpers_createLogger(params.logLevel ?? 'info');
         const client = this._client;
+        const sandboxInfo = await fetchSandboxInfo(apiUrl, token);
         return {
             async sync(localCodePath, opts) {
                 const resolvedPath = external_path_.resolve(localCodePath);
@@ -83417,6 +83541,12 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                 const hash = external_crypto_.createHash('sha1').update(resolvedPath).digest('hex').slice(0, 8);
                 const cacheKey = `limsync-cache-${folderName}-${hash}`;
                 const basisCacheDir = opts?.basisCacheDir ?? external_path_.join(external_os_namespaceObject.tmpdir(), cacheKey);
+                const additionalFiles = opts?.additionalFiles?.map((file) => ({
+                    localPath: file.localPath,
+                    remotePath: file.remotePath.startsWith('~/') ?
+                        `${sandboxInfo.homeDir}/${file.remotePath.slice(2)}`
+                        : file.remotePath,
+                }));
                 const codeSyncOpts = {
                     apiUrl,
                     token,
@@ -83424,6 +83554,7 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                     install: opts?.install ?? true,
                     ignoreFn: await folder_sync_ignore_createIgnoreFn(localCodePath, {
                         basisCacheDir,
+                        log,
                         additional: (relativePath) => {
                             if (relativePath.startsWith('build/') ||
                                 relativePath.startsWith('.build/') ||
@@ -83455,6 +83586,7 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                     maxPatchBytes: opts?.maxPatchBytes ?? 4 * 1024 * 1024,
                     launchMode: 'ForegroundIfRunning',
                     log,
+                    ...(additionalFiles ? { additionalFiles } : {}),
                 };
                 const result = await folder_sync_syncFolder(localCodePath, codeSyncOpts);
                 if (result.stopWatching) {
@@ -83466,8 +83598,9 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                 const request = {
                     command: 'xcodebuild',
                     ...(settings && { xcodebuild: settings }),
+                    ...(options?.signing && { signing: options.signing }),
                 };
-                if (options?.upload) {
+                if (options?.upload && 'assetName' in options.upload) {
                     const uploadName = options.upload.assetName;
                     const requestPromise = client.assets
                         .getOrCreate({ name: uploadName })
@@ -83480,6 +83613,9 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                         throw new Error(`Failed to create upload URL for artifact '${uploadName}': ${err instanceof Error ? err.message : err}`);
                     });
                     return exec_client_exec(requestPromise, { apiUrl, token, log });
+                }
+                if (options?.upload && 'signedUploadUrl' in options.upload) {
+                    request.signedUploadUrl = options.upload.signedUploadUrl;
                 }
                 return exec_client_exec(request, { apiUrl, token, log });
             },
@@ -83608,6 +83744,17 @@ class Limrun {
         this.maxRetries = options.maxRetries ?? 2;
         this.fetch = options.fetch ?? getDefaultFetch();
         __classPrivateFieldSet(this, _Limrun_encoder, FallbackEncoder, "f");
+        const customHeadersEnv = readEnv('LIMRUN_CUSTOM_HEADERS');
+        if (customHeadersEnv) {
+            const parsed = {};
+            for (const line of customHeadersEnv.split('\n')) {
+                const colon = line.indexOf(':');
+                if (colon >= 0) {
+                    parsed[line.substring(0, colon).trim()] = line.substring(colon + 1).trim();
+                }
+            }
+            options.defaultHeaders = { ...parsed, ...options.defaultHeaders };
+        }
         this._options = options;
         this.apiKey = apiKey;
     }
@@ -85895,6 +86042,7 @@ async function ios_client_createInstanceClient(options) {
                         setStoreKitConfig,
                         clearStoreKitConfig,
                         discoverStoreKitConfig,
+                        softReset,
                         disconnect,
                         getConnectionState,
                         onConnectionStateChange,
@@ -85990,7 +86138,7 @@ async function ios_client_createInstanceClient(options) {
                 url,
                 md5: options?.md5,
                 launchMode: options?.launchMode,
-            });
+            }, undefined, options?.timeoutMs ?? 120000);
         };
         const setOrientation = (orientation) => {
             return sendRequest('setOrientation', { orientation });
@@ -86054,31 +86202,32 @@ async function ios_client_createInstanceClient(options) {
             const hash = crypto.createHash('sha1').update(resolvedPath).digest('hex').slice(0, 8);
             const cacheKey = `limsync-cache-${folderName}-${hash}`;
             const basisCacheDir = opts?.basisCacheDir ?? path.join(os.tmpdir(), cacheKey);
+            const syncLog = (level, msg) => {
+                switch (level) {
+                    case 'debug':
+                        logger.debug(msg);
+                        break;
+                    case 'info':
+                        logger.info(msg);
+                        break;
+                    case 'warn':
+                        logger.warn(msg);
+                        break;
+                    case 'error':
+                        logger.error(msg);
+                        break;
+                    default:
+                        logger.info(msg);
+                        break;
+                }
+            };
             const folderSyncOpts = {
                 apiUrl: options.apiUrl,
                 token: options.token,
                 udid: cacheKey,
-                ignoreFn: await createIgnoreFn(localAppBundlePath, { basisCacheDir }),
+                ignoreFn: await createIgnoreFn(localAppBundlePath, { basisCacheDir, log: syncLog }),
                 basisCacheDir,
-                log: (level, msg) => {
-                    switch (level) {
-                        case 'debug':
-                            logger.debug(msg);
-                            break;
-                        case 'info':
-                            logger.info(msg);
-                            break;
-                        case 'warn':
-                            logger.warn(msg);
-                            break;
-                        case 'error':
-                            logger.error(msg);
-                            break;
-                        default:
-                            logger.info(msg);
-                            break;
-                    }
-                },
+                log: syncLog,
                 install: opts?.install ?? true,
                 maxPatchBytes: opts?.maxPatchBytes ?? 4 * 1024 * 1024,
                 launchMode: opts?.launchMode ?? 'ForegroundIfRunning',
@@ -86239,6 +86388,35 @@ async function ios_client_createInstanceClient(options) {
             finally {
                 clearTimeout(timer);
             }
+        };
+        const softReset = async (bundleId, resetOptions) => {
+            const body = { bundleId };
+            if (resetOptions?.strategy) {
+                body.strategy = resetOptions.strategy;
+            }
+            const url = `${options.apiUrl}/softReset`;
+            const response = await nodeProxyTransport.fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${options.token}`,
+                },
+                body: JSON.stringify(body),
+            });
+            if (!response.ok) {
+                const errorBody = await response.text();
+                throw new Error(`softReset failed: ${response.status} ${errorBody}`);
+            }
+            const result = (await response.json());
+            const out = {
+                strategy: result.strategy,
+                bundleId: result.bundleId,
+                durationMs: result.durationMs,
+            };
+            if (result.itemsCleared !== undefined) {
+                out.itemsCleared = result.itemsCleared;
+            }
+            return out;
         };
         const disconnect = () => {
             intentionalDisconnect = true;
