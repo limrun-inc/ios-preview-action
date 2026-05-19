@@ -30,6 +30,15 @@ jobs:
           api-key: ${{ secrets.LIM_API_KEY }}
 ```
 
+For iPad-specific previews, set the simulator model:
+
+```yaml
+with:
+  project-path: .
+  model: ipad
+  api-key: ${{ secrets.LIM_API_KEY }}
+```
+
 ## Setup
 
 1. Create a Limrun account at [console.limrun.com](https://console.limrun.com)
@@ -47,6 +56,7 @@ jobs:
 | `workspace` | No | | Path to the iOS workspace file to build. |
 | `scheme` | No | | The scheme to build. |
 | `sdk` | No | `iphonesimulator` | The SDK to build. |
+| `model` | No | `iphone` | The iOS simulator model to use for previews. Supported values: `iphone` or `ipad`. |
 | `api-key` | Yes | | Limrun API key. Pass as a secret: `${{ secrets.LIM_API_KEY }}` |
 | `github-token` | No | `${{ github.token }}` | GitHub token for posting PR comments |
 

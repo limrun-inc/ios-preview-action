@@ -86525,6 +86525,7 @@ async function updateCommentClosed(token, owner, repo, prNumber, platform) {
 const IS_POST_RUN_STATE = "is-post-run";
 const CLEANUP_LABEL_SELECTOR_STATE = "cleanup-label-selector";
 const src_platform = "ios";
+const supportedPreviewModels = ["iphone", "ipad"];
 function getOptionalInput(name) {
     return getInput(name) || undefined;
 }
@@ -86535,6 +86536,21 @@ function getXcodeProjectConfig() {
         scheme: getOptionalInput("scheme"),
         sdk: getInput("sdk"),
     };
+}
+function getPreviewModel() {
+    const model = (getInput("model") || "iphone").trim().toLowerCase();
+    if (supportedPreviewModels.includes(model)) {
+        return model;
+    }
+    throw new Error(`model must be one of: ${supportedPreviewModels.join(", ")}`);
+}
+function buildPreviewUrl(consoleUrl, assetName, model) {
+    const baseUrl = consoleUrl.endsWith("/") ? consoleUrl : `${consoleUrl}/`;
+    const url = new URL("preview", baseUrl);
+    url.searchParams.set("asset", assetName);
+    url.searchParams.set("platform", src_platform);
+    url.searchParams.set("model", model);
+    return url.toString();
 }
 function getPreviewLabels(owner, repo, prNumber) {
     return {
@@ -86637,6 +86653,7 @@ async function runMain() {
         info(`Ignoring PR action "${action}", nothing to do.`);
         return;
     }
+    const previewModel = getPreviewModel();
     if (!(0,external_fs_.existsSync)(projectPath)) {
         setFailed(`project-path "${projectPath}" does not exist.`);
         return;
@@ -86672,7 +86689,7 @@ async function runMain() {
     finally {
         await cleanupXcodeInstances(client, labelSelector);
     }
-    const previewUrl = `${consoleUrl}/preview?asset=${encodeURIComponent(assetName)}&platform=${src_platform}`;
+    const previewUrl = buildPreviewUrl(consoleUrl, assetName, previewModel);
     info(`Preview URL: ${previewUrl}`);
     setOutput("preview-url", previewUrl);
     setOutput("asset-name", assetName);

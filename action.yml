@@ -21,6 +21,10 @@ inputs:
     description: 'The SDK to build. Default is "iphonesimulator".'
     required: false
     default: 'iphonesimulator'
+  model:
+    description: 'The iOS simulator model to use for previews. Supported values: "iphone" or "ipad".'
+    required: false
+    default: 'iphone'
   api-key:
     description: 'Limrun API key (store as a repository secret)'
     required: true

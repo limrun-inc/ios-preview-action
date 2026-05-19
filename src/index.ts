@@ -7,6 +7,9 @@ import { postOrUpdateComment, updateCommentClosed } from "./comment";
 const IS_POST_RUN_STATE = "is-post-run";
 const CLEANUP_LABEL_SELECTOR_STATE = "cleanup-label-selector";
 const platform = "ios";
+const supportedPreviewModels = ["iphone", "ipad"] as const;
+
+type PreviewModel = (typeof supportedPreviewModels)[number];
 
 function getOptionalInput(name: string): string | undefined {
   return core.getInput(name) || undefined;
@@ -19,6 +22,23 @@ function getXcodeProjectConfig(): XcodeProjectConfig {
     scheme: getOptionalInput("scheme"),
     sdk: core.getInput("sdk") as XcodeProjectConfig["sdk"],
   };
+}
+
+function getPreviewModel(): PreviewModel {
+  const model = (core.getInput("model") || "iphone").trim().toLowerCase();
+  if (supportedPreviewModels.includes(model as PreviewModel)) {
+    return model as PreviewModel;
+  }
+  throw new Error(`model must be one of: ${supportedPreviewModels.join(", ")}`);
+}
+
+function buildPreviewUrl(consoleUrl: string, assetName: string, model: PreviewModel): string {
+  const baseUrl = consoleUrl.endsWith("/") ? consoleUrl : `${consoleUrl}/`;
+  const url = new URL("preview", baseUrl);
+  url.searchParams.set("asset", assetName);
+  url.searchParams.set("platform", platform);
+  url.searchParams.set("model", model);
+  return url.toString();
 }
 
 function getPreviewLabels(owner: string, repo: string, prNumber: number): Record<string, string> {
@@ -133,6 +153,8 @@ async function runMain(): Promise<void> {
     return;
   }
 
+  const previewModel = getPreviewModel();
+
   if (!existsSync(projectPath)) {
     core.setFailed(`project-path "${projectPath}" does not exist.`);
     return;
@@ -173,7 +195,7 @@ async function runMain(): Promise<void> {
     await cleanupXcodeInstances(client, labelSelector);
   }
 
-  const previewUrl = `${consoleUrl}/preview?asset=${encodeURIComponent(assetName)}&platform=${platform}`;
+  const previewUrl = buildPreviewUrl(consoleUrl, assetName, previewModel);
   core.info(`Preview URL: ${previewUrl}`);
   core.setOutput("preview-url", previewUrl);
   core.setOutput("asset-name", assetName);
