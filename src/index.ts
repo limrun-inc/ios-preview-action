@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import Limrun, { type XcodeProjectConfig } from "@limrun/api";
+import Limrun, { parseBuildSettingEntries, type XcodeProjectConfig } from "@limrun/api";
 import { existsSync, statSync } from "fs";
 import { postOrUpdateComment, updateCommentClosed } from "./comment";
 
@@ -30,6 +30,32 @@ function getPreviewModel(): PreviewModel {
     return model as PreviewModel;
   }
   throw new Error(`model must be one of: ${supportedPreviewModels.join(", ")}`);
+}
+
+function getBuildSettings(): Record<string, string> | undefined {
+  const raw = core.getInput("build-settings");
+  if (!raw.trim()) {
+    return undefined;
+  }
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  // parseBuildSettingEntries owns the contract (KEY=VALUE parse, structural
+  // validation, dedup, size limits) so it stays in lockstep with the SDK; the
+  // server is authoritative on which keys are allowed. We only add
+  // Actions-specific secret masking, and only for the APP_CONFIG_* namespace
+  // (standard build settings like SWIFT_ACTIVE_COMPILATION_CONDITIONS are not
+  // secret and should stay visible in CI logs).
+  const settings = parseBuildSettingEntries(lines);
+  if (settings) {
+    for (const [key, value] of Object.entries(settings)) {
+      if (key.startsWith("APP_CONFIG_")) {
+        core.setSecret(value);
+      }
+    }
+  }
+  return settings;
 }
 
 function buildPreviewUrl(consoleUrl: string, assetName: string, model: PreviewModel): string {
@@ -154,6 +180,7 @@ async function runMain(): Promise<void> {
   }
 
   const previewModel = getPreviewModel();
+  const buildSettings = getBuildSettings();
 
   if (!existsSync(projectPath)) {
     core.setFailed(`project-path "${projectPath}" does not exist.`);
@@ -181,7 +208,10 @@ async function runMain(): Promise<void> {
     await xcode.sync(projectPath, { watch: false, install: false });
 
     core.info(`Building project and uploading asset "${assetName}"...`);
-    const build = xcode.xcodebuild(getXcodeProjectConfig(), { upload: { assetName } });
+    const build = xcode.xcodebuild(getXcodeProjectConfig(), {
+      upload: { assetName },
+      ...(buildSettings && { buildSettings }),
+    });
 
     build.command.on("data", (chunk) => logChunk(chunk.toString(), core.info, "$ "));
     build.stdout.on("data", (chunk) => logChunk(chunk.toString(), core.info));

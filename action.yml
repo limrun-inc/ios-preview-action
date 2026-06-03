@@ -25,6 +25,10 @@ inputs:
     description: 'The iOS simulator model to use for previews. Supported values: "iphone" or "ipad".'
     required: false
     default: 'iphone'
+  build-settings:
+    description: 'Newline-delimited KEY=VALUE Xcode build settings for the preview build. Allowed keys are a server-maintained allowlist of safe settings (currently SWIFT_ACTIVE_COMPILATION_CONDITIONS) plus any APP_CONFIG_* key. Use $(inherited) to append, e.g. SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) LIMRUN.'
+    required: false
+    default: ''
   api-key:
     description: 'Limrun API key (store as a repository secret)'
     required: true
