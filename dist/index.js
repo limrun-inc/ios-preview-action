@@ -81213,7 +81213,7 @@ const safeJSON = (text) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 //# sourceMappingURL=sleep.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/version.mjs
-const api_version_VERSION = '0.28.4'; // x-release-please-version
+const api_version_VERSION = '0.30.0'; // x-release-please-version
 //# sourceMappingURL=version.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/detect-platform.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
@@ -82868,7 +82868,18 @@ async function watchFolderTree(opts) {
 var external_stream_ = __nccwpck_require__(2203);
 // EXTERNAL MODULE: external "zlib"
 var external_zlib_ = __nccwpck_require__(3106);
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/direct-instance-errors.mjs
+
+function directInstanceHttpError(operation, status, text, headers) {
+    const message = `${operation} failed: ${status}${text ? ` ${text}` : ''}`;
+    if (status === 404) {
+        return new NotFoundError(404, { message }, undefined, headers);
+    }
+    return new Error(message);
+}
+//# sourceMappingURL=direct-instance-errors.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/folder-sync.mjs
+
 
 
 
@@ -83012,7 +83023,7 @@ async function httpFolderSyncBatch(opts, meta, payloadFiles, compression) {
     });
     const text = await res.text();
     if (!res.ok) {
-        throw new Error(`folder-sync http failed: ${res.status} ${text}`);
+        throw directInstanceHttpError('folder-sync http', res.status, text, res.headers);
     }
     return JSON.parse(text);
 }
@@ -83304,7 +83315,7 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
             });
         }
         if (retryPayloads.length > 0) {
-            slog('warn', `server requested full for ${retryPayloads.length} files; retrying once`);
+            slog('debug', `server requested full for ${retryPayloads.length} files; retrying once`);
             const retryMeta = {
                 ...meta,
                 id: genId('sync'),
@@ -83458,7 +83469,66 @@ async function folder_sync_ignore_createIgnoreFn(rootDir, options) {
     };
 }
 //# sourceMappingURL=folder-sync-ignore.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/build-settings.mjs
+// Structural validation only. The server is authoritative on which build
+// settings are allowed (an allowlist of safe standard settings plus the
+// APP_CONFIG_* namespace), so the client checks only shape and size and lets
+// the server reject disallowed keys. This keeps the allowlist server-side, so
+// adding a setting does not require an SDK release.
+const buildSettingKeyPattern = /^[A-Z0-9_]+$/;
+const maxBuildSettingCount = 32;
+const maxBuildSettingValueBytes = 4096;
+const maxBuildSettingTotalBytes = 65536;
+function validateBuildSettings(settings) {
+    const entries = Object.entries(settings);
+    if (entries.length > maxBuildSettingCount) {
+        throw new Error(`too many build settings: got ${entries.length}, max ${maxBuildSettingCount}`);
+    }
+    let totalBytes = 0;
+    for (const [key, value] of entries) {
+        if (!buildSettingKeyPattern.test(key)) {
+            throw new Error(`invalid build setting key "${key}": keys must match ^[A-Z0-9_]+$`);
+        }
+        if (typeof value !== 'string') {
+            throw new Error(`invalid build setting value for "${key}": value must be a string`);
+        }
+        const valueBytes = Buffer.byteLength(value, 'utf8');
+        if (valueBytes > maxBuildSettingValueBytes) {
+            throw new Error(`build setting value for "${key}" is too large: got ${valueBytes} bytes, max ${maxBuildSettingValueBytes} bytes`);
+        }
+        totalBytes += Buffer.byteLength(key, 'utf8') + valueBytes;
+        if (totalBytes > maxBuildSettingTotalBytes) {
+            throw new Error(`build settings payload is too large: max ${maxBuildSettingTotalBytes} bytes`);
+        }
+    }
+}
+function parseBuildSettingEntries(entries) {
+    const settings = {};
+    for (const entry of entries) {
+        const separator = entry.indexOf('=');
+        if (separator <= 0) {
+            throw new Error(`invalid build setting "${entry}": expected KEY=VALUE`);
+        }
+        const key = entry.slice(0, separator).trim();
+        const value = entry.slice(separator + 1);
+        if (!key) {
+            throw new Error(`invalid build setting "${entry}": key is required`);
+        }
+        if (Object.prototype.hasOwnProperty.call(settings, key)) {
+            throw new Error(`duplicate build setting key "${key}"`);
+        }
+        settings[key] = value;
+    }
+    if (Object.keys(settings).length === 0) {
+        return undefined;
+    }
+    validateBuildSettings(settings);
+    return settings;
+}
+//# sourceMappingURL=build-settings.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/xcode-instances-helpers.mjs
+
+
 
 
 
@@ -83504,17 +83574,23 @@ async function fetchSandboxInfo(apiUrl, token) {
             Authorization: `Bearer ${token}`,
         },
     });
-    const text = await res.text();
-    if (!res.ok) {
-        throw new Error(`GET /info failed: ${res.status} ${text}`);
-    }
-    const body = JSON.parse(text);
+    const body = await readJsonResponse(res, 'GET /info');
     if (!body.homeDir) {
         throw new Error('GET /info response is missing homeDir');
     }
     return {
         homeDir: normalizeWorkspaceRelativePath(body.homeDir),
     };
+}
+async function readJsonResponse(res, operation) {
+    const text = await res.text();
+    if (!res.ok) {
+        throw directInstanceHttpError(operation, res.status, text, res.headers);
+    }
+    if (!text.trim()) {
+        throw new Error(`${operation} returned an empty response`);
+    }
+    return JSON.parse(text);
 }
 class XcodeInstances extends xcode_instances_XcodeInstances {
     async createClient(params) {
@@ -83533,7 +83609,11 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
         }
         const log = xcode_instances_helpers_createLogger(params.logLevel ?? 'info');
         const client = this._client;
-        const sandboxInfo = await fetchSandboxInfo(apiUrl, token);
+        let sandboxInfoPromise;
+        const getSandboxInfo = () => {
+            sandboxInfoPromise ?? (sandboxInfoPromise = fetchSandboxInfo(apiUrl, token));
+            return sandboxInfoPromise;
+        };
         return {
             async sync(localCodePath, opts) {
                 const resolvedPath = external_path_.resolve(localCodePath);
@@ -83541,9 +83621,10 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                 const hash = external_crypto_.createHash('sha1').update(resolvedPath).digest('hex').slice(0, 8);
                 const cacheKey = `limsync-cache-${folderName}-${hash}`;
                 const basisCacheDir = opts?.basisCacheDir ?? external_path_.join(external_os_namespaceObject.tmpdir(), cacheKey);
+                const sandboxInfo = opts?.additionalFiles && opts.additionalFiles.length > 0 ? await getSandboxInfo() : undefined;
                 const additionalFiles = opts?.additionalFiles?.map((file) => ({
                     localPath: file.localPath,
-                    remotePath: file.remotePath.startsWith('~/') ?
+                    remotePath: sandboxInfo && file.remotePath.startsWith('~/') ?
                         `${sandboxInfo.homeDir}/${file.remotePath.slice(2)}`
                         : file.remotePath,
                 }));
@@ -83595,10 +83676,18 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                 return {};
             },
             xcodebuild(settings, options) {
+                if (options?.reactNative?.devServerURL && settings?.configuration === 'Release') {
+                    throw new Error('reactNative.devServerURL is only supported for Debug builds');
+                }
+                if (options?.buildSettings) {
+                    validateBuildSettings(options.buildSettings);
+                }
                 const request = {
                     command: 'xcodebuild',
                     ...(settings && { xcodebuild: settings }),
+                    ...(options?.reactNative && { reactNative: options.reactNative }),
                     ...(options?.signing && { signing: options.signing }),
+                    ...(options?.buildSettings && { buildSettings: options.buildSettings }),
                 };
                 if (options?.upload && 'assetName' in options.upload) {
                     const uploadName = options.upload.assetName;
@@ -83618,6 +83707,15 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                     request.signedUploadUrl = options.upload.signedUploadUrl;
                 }
                 return exec_client_exec(request, { apiUrl, token, log });
+            },
+            async getSimulator() {
+                const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/simulator`, {
+                    method: 'GET',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+                return readJsonResponse(res, 'GET /simulator');
             },
             async attachSimulator(simulator) {
                 let simApiUrl;
@@ -83641,10 +83739,7 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                     },
                     body: JSON.stringify({ apiUrl: simApiUrl, token: simToken }),
                 });
-                if (!res.ok) {
-                    const text = await res.text();
-                    throw new Error(`POST /simulator failed: ${res.status} ${text}`);
-                }
+                return readJsonResponse(res, 'POST /simulator');
             },
         };
     }
@@ -84271,6 +84366,361 @@ async function tunnel_startTcpTunnel(remoteURL, token, hostname, port, options) 
     return startSingletonTcpTunnel(remoteURL, token, hostname, port, options);
 }
 /**
+ * Starts a reverse TCP tunnel for client-first protocols.
+ *
+ * The remote endpoint accepts TCP connections near the simulator and sends them
+ * through `remoteURL` as multiplexed WebSocket frames. For each remote connID,
+ * this client opens a TCP connection to `localHost:localPort` after the first
+ * payload arrives, then pipes bytes in both directions.
+ */
+async function tunnel_startReverseTcpTunnel(remoteURL, token, options) {
+    tunnel_assertPort(options.localPort, 'localPort', 1, 65535);
+    const localHost = options.localHost ?? '127.0.0.1';
+    const localPort = options.localPort;
+    const logLevel = options.logLevel ?? 'info';
+    const maxConnections = options.maxConnections ?? 64;
+    const maxPendingBytesPerConnection = options.maxPendingBytesPerConnection ?? 16 * 1024 * 1024;
+    const connectTimeoutMs = options.connectTimeoutMs ?? 10000;
+    const logger = {
+        debug: (...args) => {
+            if (logLevel === 'debug')
+                console.log('[ReverseTunnel]', ...args);
+        },
+        info: (...args) => {
+            if (logLevel === 'info' || logLevel === 'debug')
+                console.log('[ReverseTunnel]', ...args);
+        },
+        warn: (...args) => {
+            if (logLevel === 'warn' || logLevel === 'info' || logLevel === 'debug')
+                console.warn('[ReverseTunnel]', ...args);
+        },
+        error: (...args) => {
+            if (logLevel !== 'none')
+                console.error('[ReverseTunnel]', ...args);
+        },
+    };
+    return new Promise((resolve, reject) => {
+        const connections = new Map();
+        const connecting = new Set();
+        const pendingPerConn = new Map();
+        const pendingBytesPerConn = new Map();
+        const connectTimers = new Map();
+        const recentlyClosedConnIds = new Map();
+        const stateChangeCallbacks = new Set();
+        let ws;
+        let pingInterval;
+        let intentionalDisconnect = false;
+        let connectionState = 'connecting';
+        let hasResolved = false;
+        let remoteAddress;
+        const updateConnectionState = (newState) => {
+            if (connectionState !== newState) {
+                connectionState = newState;
+                logger.debug(`Connection state changed to: ${newState}`);
+                stateChangeCallbacks.forEach((callback) => {
+                    try {
+                        callback(newState);
+                    }
+                    catch (err) {
+                        logger.error('Error in connection state callback:', err);
+                    }
+                });
+            }
+        };
+        const sendCloseSignal = (connId) => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(encodeConnectionHeader(connId));
+            }
+        };
+        const markRecentlyClosed = (connId) => {
+            const existingTimer = recentlyClosedConnIds.get(connId);
+            if (existingTimer) {
+                clearTimeout(existingTimer);
+            }
+            const timer = setTimeout(() => {
+                recentlyClosedConnIds.delete(connId);
+            }, 30000);
+            timer.unref();
+            recentlyClosedConnIds.set(connId, timer);
+        };
+        const removeConnection = (connId, sendClose, graceful = false) => {
+            const socket = connections.get(connId);
+            const connectTimer = connectTimers.get(connId);
+            connections.delete(connId);
+            connecting.delete(connId);
+            pendingPerConn.delete(connId);
+            pendingBytesPerConn.delete(connId);
+            connectTimers.delete(connId);
+            markRecentlyClosed(connId);
+            if (connectTimer) {
+                clearTimeout(connectTimer);
+            }
+            if (sendClose) {
+                sendCloseSignal(connId);
+            }
+            if (socket && !socket.destroyed) {
+                if (graceful) {
+                    socket.end();
+                    setTimeout(() => {
+                        if (!socket.destroyed) {
+                            socket.destroy();
+                        }
+                    }, 1000).unref();
+                }
+                else {
+                    socket.destroy();
+                }
+            }
+        };
+        const closeAllConnections = () => {
+            for (const connId of Array.from(connections.keys())) {
+                removeConnection(connId, false);
+            }
+            connections.clear();
+            connecting.clear();
+            pendingPerConn.clear();
+            pendingBytesPerConn.clear();
+            for (const timer of recentlyClosedConnIds.values()) {
+                clearTimeout(timer);
+            }
+            recentlyClosedConnIds.clear();
+        };
+        const cleanupWebSocket = () => {
+            if (pingInterval) {
+                clearInterval(pingInterval);
+                pingInterval = undefined;
+            }
+            if (ws) {
+                ws.removeAllListeners();
+                if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+                    ws.close(1000, 'close');
+                }
+                ws = undefined;
+            }
+        };
+        const close = () => {
+            intentionalDisconnect = true;
+            cleanupWebSocket();
+            closeAllConnections();
+            updateConnectionState('disconnected');
+        };
+        const getConnectionState = () => {
+            return connectionState;
+        };
+        const onConnectionStateChange = (callback) => {
+            stateChangeCallbacks.add(callback);
+            return () => {
+                stateChangeCallbacks.delete(callback);
+            };
+        };
+        const resolveReady = (address) => {
+            remoteAddress = address;
+            hasResolved = true;
+            resolve({
+                remoteAddress,
+                close,
+                getConnectionState,
+                onConnectionStateChange,
+            });
+        };
+        const rejectStartup = (err) => {
+            if (!hasResolved) {
+                cleanupWebSocket();
+                closeAllConnections();
+                updateConnectionState('disconnected');
+                reject(err);
+            }
+            else {
+                logger.error(err.message);
+            }
+        };
+        const flushPending = (connId, socket) => {
+            const connectTimer = connectTimers.get(connId);
+            if (connectTimer) {
+                clearTimeout(connectTimer);
+                connectTimers.delete(connId);
+            }
+            const pending = pendingPerConn.get(connId) ?? [];
+            pendingPerConn.delete(connId);
+            pendingBytesPerConn.delete(connId);
+            connecting.delete(connId);
+            for (const payload of pending) {
+                socket.write(payload);
+            }
+        };
+        const connectLocal = (connId, firstPayload) => {
+            // The current wire protocol has data and close frames, but no explicit
+            // "remote TCP accepted" frame. Connect lazily on first payload, which fits
+            // HTTP/WebSocket dev servers. Server-first protocols need a protocol
+            // extension before this can behave like a transparent TCP forward.
+            if (recentlyClosedConnIds.has(connId)) {
+                logger.debug(`Ignoring payload for closed conn=${connId}`);
+                return;
+            }
+            if (connections.size >= maxConnections) {
+                logger.warn(`Rejecting reverse tunnel conn=${connId}: max connections reached`);
+                sendCloseSignal(connId);
+                markRecentlyClosed(connId);
+                return;
+            }
+            if (firstPayload.length > maxPendingBytesPerConnection) {
+                logger.warn(`Rejecting reverse tunnel conn=${connId}: initial payload exceeds pending byte limit`);
+                sendCloseSignal(connId);
+                markRecentlyClosed(connId);
+                return;
+            }
+            pendingPerConn.set(connId, [firstPayload]);
+            pendingBytesPerConn.set(connId, firstPayload.length);
+            connecting.add(connId);
+            const socket = net.createConnection({ host: localHost, port: localPort });
+            connections.set(connId, socket);
+            const connectTimer = setTimeout(() => {
+                logger.error(`Local TCP connect timed out conn=${connId} after ${connectTimeoutMs}ms`);
+                if (connections.has(connId)) {
+                    removeConnection(connId, true);
+                }
+            }, connectTimeoutMs);
+            connectTimer.unref();
+            connectTimers.set(connId, connectTimer);
+            socket.on('connect', () => {
+                logger.debug(`Connected conn=${connId} to ${localHost}:${localPort}`);
+                flushPending(connId, socket);
+            });
+            socket.on('data', (chunk) => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(Buffer.concat([encodeConnectionHeader(connId), chunk]), (err) => {
+                        if (err) {
+                            logger.error(`Failed to send conn=${connId} data: ${err.message}`);
+                        }
+                    });
+                }
+            });
+            socket.on('close', () => {
+                logger.debug(`Local TCP connection closed conn=${connId}`);
+                if (connections.has(connId)) {
+                    removeConnection(connId, true);
+                }
+            });
+            socket.on('error', (err) => {
+                logger.error(`Local TCP connection error conn=${connId}: ${err.message}`);
+                if (connections.has(connId)) {
+                    removeConnection(connId, true);
+                }
+            });
+        };
+        const handleBinaryFrame = (buffer) => {
+            if (buffer.length < 4) {
+                logger.error('Received binary frame shorter than 4 bytes; dropping');
+                return;
+            }
+            const connId = decodeConnectionHeader(buffer);
+            const payload = buffer.subarray(4);
+            if (payload.length === 0) {
+                logger.debug(`Received remote close for conn=${connId}`);
+                removeConnection(connId, false, true);
+                return;
+            }
+            if (recentlyClosedConnIds.has(connId)) {
+                logger.debug(`Ignoring payload for closed conn=${connId}`);
+                return;
+            }
+            const socket = connections.get(connId);
+            if (!socket) {
+                connectLocal(connId, payload);
+                return;
+            }
+            if (connecting.has(connId)) {
+                const pending = pendingPerConn.get(connId) ?? [];
+                const pendingBytes = (pendingBytesPerConn.get(connId) ?? 0) + payload.length;
+                if (pendingBytes > maxPendingBytesPerConnection) {
+                    logger.warn(`Closing reverse tunnel conn=${connId}: pending byte limit exceeded`);
+                    removeConnection(connId, true);
+                    return;
+                }
+                pending.push(payload);
+                pendingPerConn.set(connId, pending);
+                pendingBytesPerConn.set(connId, pendingBytes);
+                return;
+            }
+            socket.write(payload);
+        };
+        const handleControlMessage = (data) => {
+            let parsed;
+            try {
+                parsed = JSON.parse(data.toString());
+            }
+            catch {
+                rejectStartup(new Error(`Malformed reverse tunnel control message: ${data.toString()}`));
+                return;
+            }
+            if (parsed.type === 'ready') {
+                if (typeof parsed.remoteHost !== 'string' || typeof parsed.remotePort !== 'number') {
+                    rejectStartup(new Error(`Malformed reverse tunnel ready message: ${data.toString()}`));
+                    return;
+                }
+                logger.info(`Reverse tunnel ready: ${parsed.remoteHost}:${parsed.remotePort}`);
+                updateConnectionState('connected');
+                resolveReady({ address: parsed.remoteHost, port: parsed.remotePort });
+                return;
+            }
+            if (parsed.type === 'error') {
+                rejectStartup(new Error(parsed.message || 'Reverse tunnel failed to start'));
+                return;
+            }
+            rejectStartup(new Error(`Unexpected reverse tunnel control message type: ${parsed.type}`));
+        };
+        const url = new URL(remoteURL);
+        const proxyAgent = nodeProxyTransport.getWebSocketAgent(url.toString());
+        ws = new WebSocket(url.toString(), {
+            headers: { Authorization: `Bearer ${token}` },
+            ...(proxyAgent ? { agent: proxyAgent } : {}),
+            perMessageDeflate: false,
+        });
+        ws.on('error', (err) => {
+            logger.error('WebSocket error:', err.message);
+            rejectStartup(err);
+        });
+        ws.on('close', (code, reason) => {
+            if (pingInterval) {
+                clearInterval(pingInterval);
+                pingInterval = undefined;
+            }
+            logger.debug(`WebSocket disconnected (code=${code}, reason=${reason.toString()})`);
+            closeAllConnections();
+            updateConnectionState('disconnected');
+            if (!intentionalDisconnect && !hasResolved) {
+                rejectStartup(new Error(`Reverse tunnel WebSocket closed before ready: ${code} ${reason.toString()}`));
+            }
+        });
+        ws.on('open', () => {
+            const socket = ws;
+            logger.debug(`Connected WebSocket to ${url.toString()}`);
+            pingInterval = setInterval(() => {
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.ping();
+                }
+            }, 30000);
+        });
+        ws.on('message', (data, isBinary) => {
+            if (!hasResolved) {
+                if (isBinary) {
+                    rejectStartup(new Error('Received reverse tunnel binary frame before ready control message'));
+                    return;
+                }
+                handleControlMessage(data);
+                return;
+            }
+            if (!isBinary) {
+                logger.warn(`Ignoring unexpected reverse tunnel text message: ${data.toString()}`);
+                return;
+            }
+            handleBinaryFrame(Buffer.isBuffer(data) ? data
+                : Array.isArray(data) ? Buffer.concat(data)
+                    : Buffer.from(data));
+        });
+    });
+}
+/**
  * Singleton mode: Single TCP connection forwarded to WebSocket
  */
 async function startSingletonTcpTunnel(remoteURL, token, hostname, port, options) {
@@ -84799,6 +85249,11 @@ const tunnel_isNonRetryableError = (errMessage) => {
     }
     return false;
 };
+function tunnel_assertPort(port, name, min, max) {
+    if (!Number.isInteger(port) || port < min || port > max) {
+        throw new Error(`${name} must be an integer between ${min} and ${max}`);
+    }
+}
 /**
  * Encode a 32-bit connection ID as a 4-byte big-endian header
  */
@@ -84835,6 +85290,11 @@ function deriveEndpointWebSocketUrl(apiUrl) {
 }
 function buildDownloadUrl(apiUrl) {
     return `${apiUrl}/files?path=${encodeURIComponent(ANDROID_RECORDING_PATH)}`;
+}
+function assertBandwidthKbps(field, value) {
+    if (!Number.isInteger(value) || value < 0) {
+        throw new Error(`${field} must be a non-negative integer Kbps value`);
+    }
 }
 var RecordingQuality;
 (function (RecordingQuality) {
@@ -84990,6 +85450,7 @@ async function createInstanceClient(options) {
                 case 'scrollScreenResult':
                 case 'scrollElementResult':
                 case 'openUrlResult':
+                case 'setWifiBandwidthResult':
                 case 'startRecordingResult':
                 case 'stopRecordingResult':
                     return 'id' in message && typeof message.id === 'string';
@@ -85196,6 +85657,7 @@ async function createInstanceClient(options) {
                         scrollScreen,
                         scrollElement,
                         openUrl,
+                        setWifiBandwidth,
                         startRecording,
                         stopRecording,
                         keepAlive,
@@ -85273,6 +85735,21 @@ async function createInstanceClient(options) {
             return {
                 url: typeof result.url === 'string' ? result.url : url,
             };
+        };
+        const setWifiBandwidth = async (bandwidthOptions) => {
+            const request = {};
+            if (bandwidthOptions.downKbps !== undefined) {
+                assertBandwidthKbps('downKbps', bandwidthOptions.downKbps);
+                request.downKbps = bandwidthOptions.downKbps;
+            }
+            if (bandwidthOptions.upKbps !== undefined) {
+                assertBandwidthKbps('upKbps', bandwidthOptions.upKbps);
+                request.upKbps = bandwidthOptions.upKbps;
+            }
+            if (request.downKbps === undefined && request.upKbps === undefined) {
+                throw new Error('setWifiBandwidth requires downKbps, upKbps, or both');
+            }
+            await sendRequest('setWifiBandwidth', request);
         };
         const startRecording = async (recordingOptions) => {
             const request = {};
@@ -85413,6 +85890,416 @@ async function createInstanceClient(options) {
     });
 }
 //# sourceMappingURL=instance-client.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/http-proxy.mjs
+
+
+async function startHttpProxy({ localPort = 0, remoteBaseUrl, headers = {}, }) {
+    const base = trimTrailingSlashes(remoteBaseUrl);
+    const server = http.createServer((req, res) => {
+        const pathAndQuery = req.url || '/';
+        const upstreamUrl = new URL(`${base}${pathAndQuery.startsWith('/') ? pathAndQuery : `/${pathAndQuery}`}`);
+        const transport = upstreamUrl.protocol === 'https:' ? https : http;
+        const upstream = transport.request(upstreamUrl, {
+            method: req.method,
+            headers: {
+                ...req.headers,
+                host: upstreamUrl.host,
+                ...headers,
+            },
+        }, (upstreamResponse) => {
+            res.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+            upstreamResponse.pipe(res);
+        });
+        upstream.on('error', (error) => {
+            if (!res.headersSent) {
+                res.writeHead(502, { 'content-type': 'text/plain' });
+            }
+            res.end(error.message);
+        });
+        req.pipe(upstream);
+    });
+    await listen(server, localPort);
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+        throw new Error('Failed to start HTTP proxy.');
+    }
+    return {
+        port: address.port,
+        close: () => closeServer(server),
+    };
+}
+function trimTrailingSlashes(value) {
+    return value.replace(/\/+$/, '');
+}
+function listen(server, port) {
+    return new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, '127.0.0.1', () => {
+            server.off('error', reject);
+            resolve();
+        });
+    });
+}
+function closeServer(server) {
+    return new Promise((resolve, reject) => {
+        server.close((error) => {
+            if (error) {
+                reject(error);
+            }
+            else {
+                resolve();
+            }
+        });
+    });
+}
+//# sourceMappingURL=http-proxy.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/ios-shim.mjs
+
+
+
+
+const FORWARDED_SIMCTL_COMMANDS = new Set([
+    'openurl',
+    'launch',
+    'terminate',
+    'uninstall',
+    'privacy',
+    'location',
+    'status_bar',
+    'spawn',
+]);
+async function startXcrunShim(client) {
+    const server = await startXcrunShimServer({ client, udid: client.deviceInfo.udid });
+    try {
+        const dir = await createXcrunShim({ shimUrl: server.url, udid: client.deviceInfo.udid });
+        return {
+            dir,
+            close: async () => {
+                await server.close();
+                fs.rmSync(dir, { recursive: true, force: true });
+            },
+        };
+    }
+    catch (error) {
+        await server.close().catch(() => { });
+        throw error;
+    }
+}
+async function startXcrunShimServer({ client, udid, }) {
+    const server = http.createServer(async (req, res) => {
+        if (req.method !== 'POST' || req.url !== '/xcrun') {
+            sendJson(res, 404, { code: 127, stdout: '', stderr: 'not found' });
+            return;
+        }
+        try {
+            const body = (await readJson(req));
+            const args = body.args ?? [];
+            const result = await handleShimmedXcrun(client, udid, args);
+            sendJson(res, 200, result);
+        }
+        catch {
+            sendJson(res, 200, {
+                code: 1,
+                stdout: '',
+                stderr: 'limrun xcrun shim failed to execute the requested command.',
+            });
+        }
+    });
+    await ios_shim_listen(server, 0);
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+        throw new Error('Failed to start Limrun xcrun shim server.');
+    }
+    return {
+        url: `http://127.0.0.1:${address.port}/xcrun`,
+        close: () => ios_shim_closeServer(server),
+    };
+}
+async function createXcrunShim(options) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'limrun-xcrun-shim-'));
+    const shimPath = path.join(dir, 'xcrun');
+    fs.writeFileSync(shimPath, xcrunShimSource(options), 'utf8');
+    fs.chmodSync(shimPath, 0o755);
+    return dir;
+}
+async function handleShimmedXcrun(client, udid, args) {
+    if (args[0] !== 'simctl') {
+        return { code: 127, stdout: '', stderr: `unsupported xcrun command: ${args.join(' ')}` };
+    }
+    const simctlArgs = args.slice(1);
+    const command = simctlArgs[0];
+    const target = simctlTarget(command, simctlArgs);
+    if (command === 'list') {
+        // Maestro's device picker expects the full CoreSimulator JSON shape. Limrun
+        // only has one remote simulator in this context, so we synthesize that entry.
+        return simctlList(client.deviceInfo.udid, simctlArgs);
+    }
+    if (!isLimrunTarget(target, udid)) {
+        return { code: 64, stdout: '', stderr: `unsupported non-Limrun simctl target '${target ?? ''}'.` };
+    }
+    if (command === 'listapps') {
+        const apps = await client.listApps();
+        return {
+            code: 0,
+            stdout: `${JSON.stringify(toSimctlListApps(apps))}\n`,
+            stderr: '',
+        };
+    }
+    if (command === 'install') {
+        const appPath = simctlArgs[2];
+        if (!appPath) {
+            return { code: 64, stdout: '', stderr: 'simctl install requires a local .app path.' };
+        }
+        await client.syncApp(appPath, { install: true, watch: false });
+        return { code: 0, stdout: '', stderr: '' };
+    }
+    const unsupported = unsupportedPathBearingCommand(command);
+    if (unsupported) {
+        return unsupported;
+    }
+    if (!command || !FORWARDED_SIMCTL_COMMANDS.has(command)) {
+        return { code: 64, stdout: '', stderr: `limrun xcrun shim does not support simctl ${command ?? ''}.` };
+    }
+    return await client.simctl(simctlArgs).wait();
+}
+function simctlList(udid, simctlArgs) {
+    if (!simctlArgs.includes('-j')) {
+        return { code: 64, stdout: '', stderr: 'limrun xcrun shim only supports `xcrun simctl list -j`.' };
+    }
+    return {
+        code: 0,
+        stdout: `${JSON.stringify(toSimctlList(udid))}\n`,
+        stderr: '',
+    };
+}
+function unsupportedPathBearingCommand(command) {
+    // These commands either return local simulator filesystem paths or consume
+    // host-side media files. They need explicit staging/translation before they
+    // are safe to claim as supported.
+    if (command === 'get_app_container') {
+        return {
+            code: 64,
+            stdout: '',
+            stderr: 'limrun xcrun shim does not support get_app_container because upstream tools expect a local filesystem path.',
+        };
+    }
+    if (command === 'keychain') {
+        return { code: 64, stdout: '', stderr: 'limrun xcrun shim does not support simctl keychain in v1.' };
+    }
+    if (command === 'io') {
+        return {
+            code: 64,
+            stdout: '',
+            stderr: 'limrun xcrun shim does not support simctl io recordVideo in v1.',
+        };
+    }
+    if (command === 'push' || command === 'addmedia') {
+        return {
+            code: 64,
+            stdout: '',
+            stderr: `limrun xcrun shim does not support path-bearing simctl ${command} in v1.`,
+        };
+    }
+    return undefined;
+}
+function isLimrunTarget(value, udid) {
+    return value === udid || value === 'booted';
+}
+function simctlTarget(command, simctlArgs) {
+    if (command === 'launch') {
+        return simctlArgs.slice(1).find((arg) => !arg.startsWith('-'));
+    }
+    return simctlArgs[1];
+}
+function toSimctlList(udid) {
+    const runtimeIdentifier = 'com.apple.CoreSimulator.SimRuntime.iOS-18-0';
+    const deviceTypeIdentifier = 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro';
+    return {
+        devices: {
+            [runtimeIdentifier]: [
+                {
+                    availability: '(available)',
+                    dataPath: `/tmp/limrun-sim/${udid}/data`,
+                    logPath: `/tmp/limrun-sim/${udid}/logs`,
+                    isAvailable: true,
+                    name: process.env['LIMRUN_IOS_DEVICE_NAME'] || 'Limrun iPhone',
+                    state: 'Booted',
+                    udid,
+                    deviceTypeIdentifier,
+                    availabilityError: null,
+                },
+            ],
+        },
+        devicetypes: [
+            {
+                bundlePath: '',
+                identifier: deviceTypeIdentifier,
+                maxRuntimeVersion: 999999,
+                maxRuntimeVersionString: null,
+                minRuntimeVersion: 0,
+                minRuntimeVersionString: null,
+                modelIdentifier: 'iPhone17,1',
+                name: 'iPhone 16 Pro',
+                productFamily: 'iPhone',
+            },
+        ],
+        pairs: {},
+        runtimes: [
+            {
+                availability: '(available)',
+                bundlePath: '',
+                buildversion: '22A000',
+                identifier: runtimeIdentifier,
+                isInternal: false,
+                isAvailable: true,
+                name: process.env['LIMRUN_IOS_RUNTIME_NAME'] || 'iOS 18.0',
+                platform: 'iOS',
+                runtimeRoot: '',
+                supportedDeviceTypes: [],
+                version: '18.0',
+            },
+        ],
+    };
+}
+function toSimctlListApps(apps) {
+    return Object.fromEntries(apps.map((app) => [
+        app.bundleId,
+        {
+            CFBundleIdentifier: app.bundleId,
+            ...(app.name ? { CFBundleName: app.name } : {}),
+        },
+    ]));
+}
+function xcrunShimSource(options) {
+    // Keep the executable tiny: it decides whether this is a Limrun-targeted
+    // simctl call, then asks the local shim server to perform the real work.
+    // Non-Limrun calls still delegate to the host xcrun.
+    const embeddedShimUrl = options ? JSON.stringify(options.shimUrl) : 'process.env.LIMRUN_XCRUN_SHIM_URL';
+    const embeddedUdid = options ? JSON.stringify(options.udid) : 'process.env.LIMRUN_IOS_UDID';
+    return `#!/usr/bin/env node
+const http = require('node:http');
+const { spawnSync } = require('node:child_process');
+
+const args = process.argv.slice(2);
+const realXcrun = process.env.LIMRUN_REAL_XCRUN || '/usr/bin/xcrun';
+
+function delegate() {
+  const result = spawnSync(realXcrun, args, { stdio: 'inherit' });
+  if (result.error) {
+    process.stderr.write(String(result.error.message || result.error) + '\\n');
+    process.exit(127);
+  }
+  process.exit(result.status ?? 1);
+}
+
+function fail(message) {
+  process.stderr.write('limrun xcrun shim: ' + message + '\\n');
+  process.exit(64);
+}
+
+if (args[0] !== 'simctl') {
+  delegate();
+}
+
+const shimUrl = ${embeddedShimUrl};
+const udid = ${embeddedUdid};
+if (!shimUrl || !udid) {
+  fail('LIMRUN_XCRUN_SHIM_URL and LIMRUN_IOS_UDID are required.');
+}
+
+const simctlArgs = args.slice(1);
+const command = simctlArgs[0];
+function simctlTarget(command, simctlArgs) {
+  if (command === 'launch') {
+    return simctlArgs.slice(1).find((arg) => !arg.startsWith('-'));
+  }
+  return simctlArgs[1];
+}
+const target = simctlTarget(command, simctlArgs);
+function isLimrunTarget(value) {
+  return value === udid || value === 'booted';
+}
+
+if (command !== 'list' && !isLimrunTarget(target)) {
+  delegate();
+}
+
+const parsed = new URL(shimUrl);
+const body = JSON.stringify({ args });
+const req = http.request(parsed, {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/json',
+    'content-length': Buffer.byteLength(body),
+  },
+}, (res) => {
+  const chunks = [];
+  res.on('data', (chunk) => chunks.push(chunk));
+  res.on('end', () => {
+    let payload;
+    try {
+      payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    } catch (error) {
+      process.stderr.write('limrun xcrun shim: invalid shim response\\n');
+      process.exit(1);
+    }
+    if (payload.stdout) process.stdout.write(payload.stdout);
+    if (payload.stderr) process.stderr.write(payload.stderr);
+    process.exit(typeof payload.code === 'number' ? payload.code : 1);
+  });
+});
+req.on('error', (error) => {
+  process.stderr.write('limrun xcrun shim: ' + error.message + '\\n');
+  process.exit(1);
+});
+req.end(body);
+`;
+}
+function ios_shim_listen(server, port) {
+    return new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, '127.0.0.1', () => {
+            server.off('error', reject);
+            resolve();
+        });
+    });
+}
+function ios_shim_closeServer(server) {
+    return new Promise((resolve, reject) => {
+        server.close((error) => {
+            if (error) {
+                reject(error);
+            }
+            else {
+                resolve();
+            }
+        });
+    });
+}
+function readJson(req) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+        req.on('end', () => {
+            try {
+                resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
+            }
+            catch (error) {
+                reject(error);
+            }
+        });
+        req.on('error', reject);
+    });
+}
+function sendJson(res, statusCode, payload) {
+    const body = JSON.stringify(payload);
+    res.writeHead(statusCode, {
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(body),
+    });
+    res.end(body);
+}
+//# sourceMappingURL=ios-shim.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/ios-client.mjs
 
 
@@ -85425,9 +86312,30 @@ async function createInstanceClient(options) {
 
 
 
+
+
 const ACTIVE_RECORDING_FILENAME = 'recording.mp4';
+const REVERSE_TUNNEL_REMOTE_PORT_MIN = 57090;
+const REVERSE_TUNNEL_REMOTE_PORT_MAX = 57099;
 function ios_client_buildDownloadUrl(apiUrl) {
     return `${apiUrl}/files?name=${encodeURIComponent(ACTIVE_RECORDING_FILENAME)}`;
+}
+function deriveReverseTunnelUrl(apiUrl, remotePort) {
+    const url = new URL(apiUrl);
+    if (url.protocol === 'https:') {
+        url.protocol = 'wss:';
+    }
+    else if (url.protocol === 'http:') {
+        url.protocol = 'ws:';
+    }
+    else {
+        throw new Error(`Unsupported apiUrl protocol for reverse tunnel: ${url.protocol}`);
+    }
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/reverse-tunnel`;
+    url.search = '';
+    url.hash = '';
+    url.searchParams.set('remotePort', String(remotePort));
+    return url.toString();
 }
 function parseElementTree(json) {
     return JSON.parse(json);
@@ -85717,6 +86625,8 @@ async function ios_client_createInstanceClient(options) {
     const pendingRequests = new Map();
     // Simctl uses streaming, so it needs separate handling
     const simctlExecutions = new Map();
+    const xcrunShimCleanups = [];
+    const httpProxyCleanups = [];
     const stateChangeCallbacks = new Set();
     // Logger functions
     const logger = {
@@ -85760,7 +86670,7 @@ async function ios_client_createInstanceClient(options) {
         simctlExecutions.forEach((execution) => execution._handleError(new Error(reason)));
         simctlExecutions.clear();
     };
-    const cleanup = () => {
+    const cleanupConnection = () => {
         if (reconnectTimeout) {
             clearTimeout(reconnectTimeout);
             reconnectTimeout = undefined;
@@ -85776,6 +86686,20 @@ async function ios_client_createInstanceClient(options) {
             }
             ws = undefined;
         }
+    };
+    const cleanupClientResources = () => {
+        const shimCleanups = xcrunShimCleanups.splice(0);
+        for (const closeShim of shimCleanups) {
+            closeShim().catch((error) => logger.warn('Failed to close xcrun shim:', error));
+        }
+        const proxyCleanups = httpProxyCleanups.splice(0);
+        for (const closeProxy of proxyCleanups) {
+            closeProxy().catch((error) => logger.warn('Failed to close HTTP proxy:', error));
+        }
+    };
+    const cleanup = () => {
+        cleanupConnection();
+        cleanupClientResources();
     };
     let pingInterval;
     const keepAliveSessionId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -85810,6 +86734,19 @@ async function ios_client_createInstanceClient(options) {
         const generateId = () => {
             return `ts-client-${Date.now()}-${Math.random().toString(36).substring(7)}`;
         };
+        const redactRequestForDebug = (request) => {
+            if (request['type'] !== 'launchApp') {
+                return request;
+            }
+            const runtime = request['runtime'];
+            return {
+                type: request['type'],
+                id: request['id'],
+                bundleId: request['bundleId'],
+                mode: request['mode'],
+                runtime: runtime ? { kind: runtime.kind, version: runtime.version } : undefined,
+            };
+        };
         // Generic request sender with timeout and response handling
         const sendRequest = (type, params = {}, transform, timeoutMs = 30000) => {
             return new Promise((resolve, reject) => {
@@ -85824,7 +86761,7 @@ async function ios_client_createInstanceClient(options) {
                 }, timeoutMs);
                 pendingRequests.set(id, transform ? { resolve, reject, timeout, transform } : { resolve, reject, timeout });
                 const request = { type, id, ...params };
-                logger.debug('Sending request:', request);
+                logger.debug('Sending request:', redactRequestForDebug(request));
                 ws.send(JSON.stringify(request), (err) => {
                     if (err) {
                         clearTimeout(timeout);
@@ -85889,7 +86826,7 @@ async function ios_client_createInstanceClient(options) {
             }),
         };
         const setupWebSocket = () => {
-            cleanup();
+            cleanupConnection();
             updateConnectionState('connecting');
             const proxyAgent = nodeProxyTransport.getWebSocketAgent(endpointWebSocketUrl);
             ws = new WebSocket(endpointWebSocketUrl, proxyAgent ? { agent: proxyAgent } : {});
@@ -86043,11 +86980,14 @@ async function ios_client_createInstanceClient(options) {
                         clearStoreKitConfig,
                         discoverStoreKitConfig,
                         softReset,
+                        startReverseTunnel,
+                        startHttpProxy,
                         disconnect,
                         getConnectionState,
                         onConnectionStateChange,
                         simctl,
                         xcrun,
+                        startXcrunShim,
                         xcodebuild,
                         cp,
                         lsof,
@@ -86108,8 +87048,20 @@ async function ios_client_createInstanceClient(options) {
         const toggleKeyboard = () => {
             return sendRequest('toggleKeyboard');
         };
-        const launchApp = (bundleId, mode) => {
-            return sendRequest('launchApp', { bundleId, mode });
+        const launchApp = (bundleId, modeOrOptions) => {
+            const launchOptions = typeof modeOrOptions === 'string' ? { mode: modeOrOptions } : modeOrOptions ?? {};
+            const requestedMode = typeof modeOrOptions === 'object' ?
+                modeOrOptions.mode
+                : launchOptions.mode;
+            if (launchOptions.runtime && requestedMode === 'ForegroundIfRunning') {
+                return Promise.reject(new Error('launchApp runtime launches require RelaunchIfRunning so runtime injection is applied.'));
+            }
+            const mode = launchOptions.runtime ? 'RelaunchIfRunning' : launchOptions.mode;
+            return sendRequest('launchApp', {
+                bundleId,
+                mode,
+                runtime: launchOptions.runtime,
+            });
         };
         const terminateApp = (bundleId) => {
             return sendRequest('terminateApp', { bundleId });
@@ -86240,6 +87192,16 @@ async function ios_client_createInstanceClient(options) {
         };
         const xcrun = (args) => {
             return sendRequest('xcrun', { args });
+        };
+        const startXcrunShim = async () => {
+            const shim = await startClientXcrunShim({
+                deviceInfo: cachedDeviceInfo,
+                listApps,
+                simctl,
+                syncApp,
+            });
+            xcrunShimCleanups.push(shim.close);
+            return shim.dir;
         };
         const xcodebuild = (args) => {
             return sendRequest('xcodebuild', { args });
@@ -86418,6 +87380,29 @@ async function ios_client_createInstanceClient(options) {
             }
             return out;
         };
+        const startReverseTunnel = async (tunnelOptions) => {
+            assertPort(tunnelOptions.remotePort, 'remotePort', REVERSE_TUNNEL_REMOTE_PORT_MIN, REVERSE_TUNNEL_REMOTE_PORT_MAX);
+            const localPort = tunnelOptions.localPort ?? tunnelOptions.remotePort;
+            assertPort(localPort, 'localPort', 1, 65535);
+            const remoteURL = deriveReverseTunnelUrl(options.apiUrl, tunnelOptions.remotePort);
+            return startReverseTcpTunnel(remoteURL, options.token, {
+                localHost: tunnelOptions.localHost ?? '127.0.0.1',
+                localPort,
+                logLevel: tunnelOptions.logLevel ?? logLevel,
+            });
+        };
+        const startHttpProxy = async (proxyOptions) => {
+            assertPort(proxyOptions.localPort, 'localPort', 1, 65535);
+            const proxy = await startLocalHttpProxy({
+                localPort: proxyOptions.localPort,
+                remoteBaseUrl: proxyOptions.remoteBaseUrl,
+                headers: {
+                    authorization: `Bearer ${options.token}`,
+                },
+            });
+            httpProxyCleanups.push(proxy.close);
+            return proxy.port;
+        };
         const disconnect = () => {
             intentionalDisconnect = true;
             cleanup();
@@ -86440,6 +87425,8 @@ async function ios_client_createInstanceClient(options) {
 //# sourceMappingURL=ios-client.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/index.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+
 
 
 
@@ -86543,6 +87530,31 @@ function getPreviewModel() {
         return model;
     }
     throw new Error(`model must be one of: ${supportedPreviewModels.join(", ")}`);
+}
+function getBuildSettings() {
+    const raw = getInput("build-settings");
+    if (!raw.trim()) {
+        return undefined;
+    }
+    const lines = raw
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    // parseBuildSettingEntries owns the contract (KEY=VALUE parse, structural
+    // validation, dedup, size limits) so it stays in lockstep with the SDK; the
+    // server is authoritative on which keys are allowed. We only add
+    // Actions-specific secret masking, and only for the APP_CONFIG_* namespace
+    // (standard build settings like SWIFT_ACTIVE_COMPILATION_CONDITIONS are not
+    // secret and should stay visible in CI logs).
+    const settings = parseBuildSettingEntries(lines);
+    if (settings) {
+        for (const [key, value] of Object.entries(settings)) {
+            if (key.startsWith("APP_CONFIG_")) {
+                core_setSecret(value);
+            }
+        }
+    }
+    return settings;
 }
 function buildPreviewUrl(consoleUrl, assetName, model) {
     const baseUrl = consoleUrl.endsWith("/") ? consoleUrl : `${consoleUrl}/`;
@@ -86654,6 +87666,7 @@ async function runMain() {
         return;
     }
     const previewModel = getPreviewModel();
+    const buildSettings = getBuildSettings();
     if (!(0,external_fs_.existsSync)(projectPath)) {
         setFailed(`project-path "${projectPath}" does not exist.`);
         return;
@@ -86677,7 +87690,10 @@ async function runMain() {
         info(`Syncing project from ${projectPath}...`);
         await xcode.sync(projectPath, { watch: false, install: false });
         info(`Building project and uploading asset "${assetName}"...`);
-        const build = xcode.xcodebuild(getXcodeProjectConfig(), { upload: { assetName } });
+        const build = xcode.xcodebuild(getXcodeProjectConfig(), {
+            upload: { assetName },
+            ...(buildSettings && { buildSettings }),
+        });
         build.command.on("data", (chunk) => logChunk(chunk.toString(), info, "$ "));
         build.stdout.on("data", (chunk) => logChunk(chunk.toString(), info));
         build.stderr.on("data", (chunk) => logChunk(chunk.toString(), warning));

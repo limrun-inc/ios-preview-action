@@ -28,6 +28,9 @@ jobs:
         with:
           project-path: .
           api-key: ${{ secrets.LIM_API_KEY }}
+          build-settings: |
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) LIMRUN
+            APP_CONFIG_DEV_LOGIN_SECRET=${{ secrets.DEV_LOGIN_SECRET }}
 ```
 
 For iPad-specific previews, set the simulator model:
@@ -57,8 +60,38 @@ with:
 | `scheme` | No | | The scheme to build. |
 | `sdk` | No | `iphonesimulator` | The SDK to build. |
 | `model` | No | `iphone` | The iOS simulator model to use for previews. Supported values: `iphone` or `ipad`. |
+| `build-settings` | No | | Newline-delimited `KEY=VALUE` Xcode build settings for the preview build. Allowlisted safe settings (currently `SWIFT_ACTIVE_COMPILATION_CONDITIONS`) plus any `APP_CONFIG_*` key. |
 | `api-key` | Yes | | Limrun API key. Pass as a secret: `${{ secrets.LIM_API_KEY }}` |
 | `github-token` | No | `${{ github.token }}` | GitHub token for posting PR comments |
+
+## Build-time build settings
+
+Use `build-settings` to pass Xcode build settings into the preview build. Allowed keys are a server-maintained allowlist of safe settings (currently `SWIFT_ACTIVE_COMPILATION_CONDITIONS`) plus any `APP_CONFIG_*` key for app configuration. Keys are passed to xcodebuild verbatim; use `$(inherited)` to append rather than replace.
+
+```yaml
+with:
+  project-path: .
+  scheme: Scripty
+  api-key: ${{ secrets.LIM_API_KEY }}
+  build-settings: |
+    SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) LIMRUN
+    APP_CONFIG_DEV_LOGIN_SECRET=${{ secrets.DEV_LOGIN_SECRET }}
+```
+
+`SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) LIMRUN` enables `#if LIMRUN` in your Swift sources for preview builds. An `APP_CONFIG_*` value (whose value is redacted in build logs) is referenced from your app's `Info.plist`, for example:
+
+```xml
+<key>DevLoginSecret</key>
+<string>$(APP_CONFIG_DEV_LOGIN_SECRET)</string>
+```
+
+And read it at runtime:
+
+```swift
+let secret = Bundle.main.object(forInfoDictionaryKey: "DevLoginSecret") as? String
+```
+
+These values are available to the code being built and may be embedded into the app artifact. Use scoped preview/debug values rather than durable secrets. For non-Limrun builds, provide defaults in an `.xcconfig` or scheme, or make the app tolerate missing values.
 
 ## Outputs
 
