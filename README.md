@@ -93,6 +93,8 @@ let secret = Bundle.main.object(forInfoDictionaryKey: "DevLoginSecret") as? Stri
 
 These values are available to the code being built and may be embedded into the app artifact. Use scoped preview/debug values rather than durable secrets. For non-Limrun builds, provide defaults in an `.xcconfig` or scheme, or make the app tolerate missing values.
 
+Pass sensitive `APP_CONFIG_*` values via `${{ secrets.* }}` (e.g. `APP_CONFIG_DEV_LOGIN_SECRET=${{ secrets.DEV_LOGIN_SECRET }}`). GitHub then masks the value everywhere in the run, including the step's input echo. The action additionally masks `APP_CONFIG_*` values in the streamed build output, and the build server redacts them in the command event. A plain (non-`secrets`) value would be visible in the workflow input echo, so do not hardcode sensitive values.
+
 ## Outputs
 
 | Output | Description |
