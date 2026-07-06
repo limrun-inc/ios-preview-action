@@ -2,9 +2,13 @@ name: 'Preview Links on PRs for iOS apps'
 description: 'Build iOS apps on Limrun Xcode and post preview links on pull requests'
 inputs:
   project-path:
-    description: 'Path to the iOS project directory to sync to the Xcode instance. Default is the repository root.'
+    description: 'Path to the iOS project directory to sync to the Xcode instance. Default is the repository root. A Bazel workspace root here (MODULE.bazel / WORKSPACE) is built with remote build execution instead of xcodebuild; that needs bazelisk on the runner.'
     required: false
     default: '.'
+  bazel-target:
+    description: 'Bazel label of the app target to build (e.g. //App). Default is inferred when the workspace has a single app target.'
+    required: false
+    default: ''
   project:
     description: 'Path to the iOS project file to build. Default is derived from the workspace file.'
     required: false
