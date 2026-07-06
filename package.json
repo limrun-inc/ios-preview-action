@@ -9,7 +9,7 @@
   "dependencies": {
     "@actions/core": "^3.0.1",
     "@actions/github": "^9.1.1",
-    "@limrun/api": "^0.30.0"
+    "@limrun/api": "^0.37.2"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -42,6 +42,30 @@ with:
   api-key: ${{ secrets.LIM_API_KEY }}
 ```
 
+## Bazel projects
+
+When `project-path` is a Bazel workspace root (has `MODULE.bazel`, `WORKSPACE`, or `WORKSPACE.bazel` directly in it), the action builds with Limrun remote build execution instead of xcodebuild: bazel runs on the runner while all Apple actions execute on the remote Xcode instance, and the resulting app is uploaded as the preview asset. The runner needs `bazelisk` on the PATH (preinstalled on GitHub-hosted runners).
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: limrun-inc/ios-preview-action@main
+    with:
+      project-path: .
+      bazel-target: //App # optional, inferred for single-app workspaces
+      api-key: ${{ secrets.LIM_API_KEY }}
+```
+
+The xcodebuild-only inputs (`project`, `workspace`, `scheme`, `build-settings`) fail the run when combined with a Bazel workspace; put your flags in `user.limrun.bazelrc` at the workspace root instead.
+
+Add a `concurrency` group so rapid pushes to the same PR don't run two builds against the same preview at once:
+
+```yaml
+concurrency:
+  group: ios-preview-${{ github.event.number }}
+  cancel-in-progress: true
+```
+
 ## Setup
 
 1. Create a Limrun account at [console.limrun.com](https://console.limrun.com)
@@ -54,7 +78,8 @@ with:
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `project-path` | On open/sync | `.` | Directory to sync to the temporary Xcode instance. |
+| `project-path` | On open/sync | `.` | Directory to sync to the temporary Xcode instance. A Bazel workspace here is built with remote build execution instead. |
+| `bazel-target` | No | | Bazel label of the app target to build (e.g. `//App`). Inferred for single-app workspaces. |
 | `project` | No | | Path to the iOS project file to build. |
 | `workspace` | No | | Path to the iOS workspace file to build. |
 | `scheme` | No | | The scheme to build. |

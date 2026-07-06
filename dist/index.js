@@ -40014,6 +40014,68 @@ function plural(ms, msAbs, n, name) {
 
 /***/ }),
 
+/***/ 3313:
+/***/ ((module) => {
+
+module.exports = Pend;
+
+function Pend() {
+  this.pending = 0;
+  this.max = Infinity;
+  this.listeners = [];
+  this.waiting = [];
+  this.error = null;
+}
+
+Pend.prototype.go = function(fn) {
+  if (this.pending < this.max) {
+    pendGo(this, fn);
+  } else {
+    this.waiting.push(fn);
+  }
+};
+
+Pend.prototype.wait = function(cb) {
+  if (this.pending === 0) {
+    cb(this.error);
+  } else {
+    this.listeners.push(cb);
+  }
+};
+
+Pend.prototype.hold = function() {
+  return pendHold(this);
+};
+
+function pendHold(self) {
+  self.pending += 1;
+  var called = false;
+  return onCb;
+  function onCb(err) {
+    if (called) throw new Error("callback called twice");
+    called = true;
+    self.error = self.error || err;
+    self.pending -= 1;
+    if (self.waiting.length > 0 && self.pending < self.max) {
+      pendGo(self, self.waiting.shift());
+    } else if (self.pending === 0) {
+      var listeners = self.listeners;
+      self.listeners = [];
+      listeners.forEach(cbListener);
+    }
+  }
+  function cbListener(listener) {
+    listener(self.error);
+  }
+}
+
+function pendGo(self, fn) {
+  fn(pendHold(self));
+}
+
+
+/***/ }),
+
 /***/ 770:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -72806,6 +72868,1357 @@ function socketOnError() {
 
 /***/ }),
 
+/***/ 4248:
+/***/ ((module) => {
+
+// Adapted from https://github.com/brianloveswords/buffer-crc32/blob/v0.2.13/index.js
+const CRC_TABLE = new Int32Array([
+  0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
+  0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,
+  0x1db71064, 0x6ab020f2, 0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
+  0x136c9856, 0x646ba8c0, 0xfd62f97a, 0x8a65c9ec, 0x14015c4f, 0x63066cd9, 0xfa0f3d63, 0x8d080df5,
+  0x3b6e20c8, 0x4c69105e, 0xd56041e4, 0xa2677172, 0x3c03e4d1, 0x4b04d447, 0xd20d85fd, 0xa50ab56b,
+  0x35b5a8fa, 0x42b2986c, 0xdbbbc9d6, 0xacbcf940, 0x32d86ce3, 0x45df5c75, 0xdcd60dcf, 0xabd13d59,
+  0x26d930ac, 0x51de003a, 0xc8d75180, 0xbfd06116, 0x21b4f4b5, 0x56b3c423, 0xcfba9599, 0xb8bda50f,
+  0x2802b89e, 0x5f058808, 0xc60cd9b2, 0xb10be924, 0x2f6f7c87, 0x58684c11, 0xc1611dab, 0xb6662d3d,
+  0x76dc4190, 0x01db7106, 0x98d220bc, 0xefd5102a, 0x71b18589, 0x06b6b51f, 0x9fbfe4a5, 0xe8b8d433,
+  0x7807c9a2, 0x0f00f934, 0x9609a88e, 0xe10e9818, 0x7f6a0dbb, 0x086d3d2d, 0x91646c97, 0xe6635c01,
+  0x6b6b51f4, 0x1c6c6162, 0x856530d8, 0xf262004e, 0x6c0695ed, 0x1b01a57b, 0x8208f4c1, 0xf50fc457,
+  0x65b0d9c6, 0x12b7e950, 0x8bbeb8ea, 0xfcb9887c, 0x62dd1ddf, 0x15da2d49, 0x8cd37cf3, 0xfbd44c65,
+  0x4db26158, 0x3ab551ce, 0xa3bc0074, 0xd4bb30e2, 0x4adfa541, 0x3dd895d7, 0xa4d1c46d, 0xd3d6f4fb,
+  0x4369e96a, 0x346ed9fc, 0xad678846, 0xda60b8d0, 0x44042d73, 0x33031de5, 0xaa0a4c5f, 0xdd0d7cc9,
+  0x5005713c, 0x270241aa, 0xbe0b1010, 0xc90c2086, 0x5768b525, 0x206f85b3, 0xb966d409, 0xce61e49f,
+  0x5edef90e, 0x29d9c998, 0xb0d09822, 0xc7d7a8b4, 0x59b33d17, 0x2eb40d81, 0xb7bd5c3b, 0xc0ba6cad,
+  0xedb88320, 0x9abfb3b6, 0x03b6e20c, 0x74b1d29a, 0xead54739, 0x9dd277af, 0x04db2615, 0x73dc1683,
+  0xe3630b12, 0x94643b84, 0x0d6d6a3e, 0x7a6a5aa8, 0xe40ecf0b, 0x9309ff9d, 0x0a00ae27, 0x7d079eb1,
+  0xf00f9344, 0x8708a3d2, 0x1e01f268, 0x6906c2fe, 0xf762575d, 0x806567cb, 0x196c3671, 0x6e6b06e7,
+  0xfed41b76, 0x89d32be0, 0x10da7a5a, 0x67dd4acc, 0xf9b9df6f, 0x8ebeeff9, 0x17b7be43, 0x60b08ed5,
+  0xd6d6a3e8, 0xa1d1937e, 0x38d8c2c4, 0x4fdff252, 0xd1bb67f1, 0xa6bc5767, 0x3fb506dd, 0x48b2364b,
+  0xd80d2bda, 0xaf0a1b4c, 0x36034af6, 0x41047a60, 0xdf60efc3, 0xa867df55, 0x316e8eef, 0x4669be79,
+  0xcb61b38c, 0xbc66831a, 0x256fd2a0, 0x5268e236, 0xcc0c7795, 0xbb0b4703, 0x220216b9, 0x5505262f,
+  0xc5ba3bbe, 0xb2bd0b28, 0x2bb45a92, 0x5cb36a04, 0xc2d7ffa7, 0xb5d0cf31, 0x2cd99e8b, 0x5bdeae1d,
+  0x9b64c2b0, 0xec63f226, 0x756aa39c, 0x026d930a, 0x9c0906a9, 0xeb0e363f, 0x72076785, 0x05005713,
+  0x95bf4a82, 0xe2b87a14, 0x7bb12bae, 0x0cb61b38, 0x92d28e9b, 0xe5d5be0d, 0x7cdcefb7, 0x0bdbdf21,
+  0x86d3d2d4, 0xf1d4e242, 0x68ddb3f8, 0x1fda836e, 0x81be16cd, 0xf6b9265b, 0x6fb077e1, 0x18b74777,
+  0x88085ae6, 0xff0f6a70, 0x66063bca, 0x11010b5c, 0x8f659eff, 0xf862ae69, 0x616bffd3, 0x166ccf45,
+  0xa00ae278, 0xd70dd2ee, 0x4e048354, 0x3903b3c2, 0xa7672661, 0xd06016f7, 0x4969474d, 0x3e6e77db,
+  0xaed16a4a, 0xd9d65adc, 0x40df0b66, 0x37d83bf0, 0xa9bcae53, 0xdebb9ec5, 0x47b2cf7f, 0x30b5ffe9,
+  0xbdbdf21c, 0xcabac28a, 0x53b39330, 0x24b4a3a6, 0xbad03605, 0xcdd70693, 0x54de5729, 0x23d967bf,
+  0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d,
+]);
+
+function crc32(buf) {
+  let crc = -1;
+  for (let x of buf) {
+    crc = CRC_TABLE[(crc ^ x) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+module.exports = crc32;
+
+
+/***/ }),
+
+/***/ 3502:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+// This was adapted from https://github.com/andrewrk/node-fd-slicer by Andrew Kelley under the MIT License.
+var fs = __nccwpck_require__(9896);
+var util = __nccwpck_require__(9023);
+var stream = __nccwpck_require__(2203);
+var Readable = stream.Readable;
+var PassThrough = stream.PassThrough;
+var Pend = __nccwpck_require__(3313);
+var EventEmitter = (__nccwpck_require__(4434).EventEmitter);
+
+exports.BufferSlicer = BufferSlicer;
+exports.FdSlicer = FdSlicer;
+
+util.inherits(FdSlicer, EventEmitter);
+function FdSlicer(fd) {
+  EventEmitter.call(this);
+
+  this.fd = fd;
+  this.pend = new Pend();
+  this.pend.max = 1;
+  this.refCount = 0;
+}
+
+FdSlicer.prototype.read = function(buffer, offset, length, position, callback) {
+  var self = this;
+  self.pend.go(function(cb) {
+    fs.read(self.fd, buffer, offset, length, position, function(err, bytesRead, buffer) {
+      cb();
+      callback(err, bytesRead, buffer);
+    });
+  });
+};
+
+FdSlicer.prototype.createReadStream = function(options) {
+  return new ReadStream(this, options);
+};
+
+FdSlicer.prototype.ref = function() {
+  this.refCount += 1;
+};
+
+FdSlicer.prototype.unref = function() {
+  var self = this;
+  self.refCount -= 1;
+  if (self.refCount < 0) throw new Error("invalid unref");
+  if (self.refCount > 0) return;
+
+  fs.close(self.fd, onCloseDone);
+
+  function onCloseDone(err) {
+    if (err) {
+      self.emit('error', err);
+    } else {
+      self.emit('close');
+    }
+  }
+};
+
+util.inherits(ReadStream, Readable);
+function ReadStream(context, options) {
+  options = options || {};
+  Readable.call(this, options);
+
+  this.context = context;
+  this.context.ref();
+
+  this.start = options.start || 0;
+  this.endOffset = options.end;
+  this.pos = this.start;
+}
+
+ReadStream.prototype._read = function(n) {
+  var self = this;
+
+  var toRead = Math.min(self._readableState.highWaterMark, n);
+  if (self.endOffset != null) {
+    toRead = Math.min(toRead, self.endOffset - self.pos);
+  }
+  if (toRead <= 0) {
+    self.push(null);
+    this._cleanup();
+    return;
+  }
+  self.context.pend.go(function(cb) {
+    var buffer = Buffer.allocUnsafe(toRead);
+    fs.read(self.context.fd, buffer, 0, toRead, self.pos, function(err, bytesRead) {
+      if (err) {
+        self.destroy(err);
+      } else if (bytesRead === 0) {
+        self.push(null);
+        self._cleanup();
+      } else {
+        self.pos += bytesRead;
+        self.push(buffer.slice(0, bytesRead));
+      }
+      cb();
+    });
+  });
+};
+
+ReadStream.prototype._destroy = function(err, cb) {
+  // Node 14+ calls this automatically at EOF.
+  this._cleanup();
+  cb(err);
+};
+
+ReadStream.prototype._cleanup = function() {
+  if (this.context != null) {
+    this.context.unref();
+    this.context = null;
+  }
+};
+
+util.inherits(BufferSlicer, EventEmitter);
+function BufferSlicer(buffer) {
+  EventEmitter.call(this);
+
+  this.refCount = 0;
+  this.buffer = buffer;
+}
+
+BufferSlicer.prototype.read = function(buffer, offset, length, position, callback) {
+  if (!(0 <= offset && offset <= buffer.length)) throw new RangeError("offset outside buffer: 0 <= " + offset + " <= " + buffer.length);
+  if (position < 0) throw new RangeError("position is negative: " + position);
+  if (offset + length > buffer.length) {
+    // The caller's buffer can't hold all the bytes they're trying to read.
+    // Clamp the length instead of giving an error.
+    // The callback will be informed of fewer than expected bytes written.
+    length = buffer.length - offset;
+  }
+  if (position + length > this.buffer.length) {
+    // Clamp any attempt to read past the end of the source buffer.
+    length = this.buffer.length - position;
+  }
+  if (length <= 0) {
+    // After any clamping, we're fully out of bounds or otherwise have nothing to do.
+    // This isn't an error; it's just zero bytes written.
+    setImmediate(function() {
+      callback(null, 0);
+    });
+    return;
+  }
+  this.buffer.copy(buffer, offset, position, position + length);
+  setImmediate(function() {
+    callback(null, length);
+  });
+};
+
+BufferSlicer.prototype.createReadStream = function(options) {
+  options = options || {};
+  var readStream = new PassThrough(options);
+  readStream.start = options.start || 0;
+  readStream.endOffset = options.end;
+  // by the time this function returns, we'll be done.
+  readStream.pos = readStream.endOffset || this.buffer.length;
+
+  var entireSlice = this.buffer.slice(readStream.start, readStream.pos);
+  // Cut the buffer into smaller slices for better memory usage when streaming into a zlib inflate stream.
+  // See https://github.com/thejoshwolfe/yauzl/issues/87
+  var maxChunkSize = 0x10000;
+  var offset = 0;
+  while (true) {
+    var nextOffset = offset + maxChunkSize;
+    if (nextOffset >= entireSlice.length) {
+      // last chunk
+      if (offset < entireSlice.length) {
+        readStream.write(entireSlice.slice(offset, entireSlice.length));
+      }
+      break;
+    }
+    readStream.write(entireSlice.slice(offset, nextOffset));
+    offset = nextOffset;
+  }
+
+  readStream.end();
+  return readStream;
+};
+
+BufferSlicer.prototype.ref = function() {
+  this.refCount += 1;
+};
+
+BufferSlicer.prototype.unref = function() {
+  this.refCount -= 1;
+
+  if (this.refCount < 0) {
+    throw new Error("invalid unref");
+  }
+};
+
+
+/***/ }),
+
+/***/ 663:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+var __webpack_unused_export__;
+var fs = __nccwpck_require__(9896);
+var zlib = __nccwpck_require__(3106);
+var fd_slicer = __nccwpck_require__(3502);
+var util = __nccwpck_require__(9023);
+var EventEmitter = (__nccwpck_require__(4434).EventEmitter);
+var Transform = (__nccwpck_require__(2203).Transform);
+var PassThrough = (__nccwpck_require__(2203).PassThrough);
+var Writable = (__nccwpck_require__(2203).Writable);
+
+// Node 20 added zlib.crc32.
+const crc32 = typeof zlib.crc32 === "function" ? zlib.crc32 : __nccwpck_require__(4248);
+
+__webpack_unused_export__ = open;
+__webpack_unused_export__ = fromFd;
+__webpack_unused_export__ = fromBuffer;
+__webpack_unused_export__ = fromRandomAccessReader;
+__webpack_unused_export__ = openPromise;
+__webpack_unused_export__ = fromFdPromise;
+__webpack_unused_export__ = fromBufferPromise;
+__webpack_unused_export__ = fromRandomAccessReaderPromise;
+
+__webpack_unused_export__ = dosDateTimeToDate;
+__webpack_unused_export__ = getFileNameLowLevel;
+__webpack_unused_export__ = validateFileName;
+__webpack_unused_export__ = parseExtraFields;
+__webpack_unused_export__ = ZipFile;
+__webpack_unused_export__ = Entry;
+__webpack_unused_export__ = LocalFileHeader;
+__webpack_unused_export__ = RandomAccessReader;
+
+function openPromise(path, options) {
+  return new Promise((resolve, reject) => {
+    open(path, {...options, lazyEntries: true}, function(err, zipfile) {
+      if (err) return reject(err);
+      resolve(zipfile);
+    });
+  });
+}
+function fromFdPromise(fd, options) {
+  return new Promise((resolve, reject) => {
+    fromFd(fd, {...options, lazyEntries: true}, function(err, zipfile) {
+      if (err) return reject(err);
+      resolve(zipfile);
+    });
+  });
+}
+function fromBufferPromise(buffer, options) {
+  return new Promise((resolve, reject) => {
+    fromBuffer(buffer, {...options, lazyEntries: true}, function(err, zipfile) {
+      if (err) return reject(err);
+      resolve(zipfile);
+    });
+  });
+}
+function fromRandomAccessReaderPromise(reader, totalSize, options) {
+  return new Promise((resolve, reject) => {
+    fromRandomAccessReader(reader, totalSize, {...options, lazyEntries: true}, function(err, zipfile) {
+      if (err) return reject(err);
+      resolve(zipfile);
+    });
+  });
+}
+
+function open(path, options, callback) {
+  if (typeof options === "function") {
+    callback = options;
+    options = null;
+  }
+  if (options == null) options = {};
+  if (options.autoClose == null) options.autoClose = true;
+  if (options.lazyEntries == null) options.lazyEntries = false;
+  if (options.decodeStrings == null) options.decodeStrings = true;
+  if (options.validateEntrySizes == null) options.validateEntrySizes = true;
+  if (options.strictFileNames == null) options.strictFileNames = false;
+  if (callback == null) callback = defaultCallback;
+  fs.open(path, "r", function(err, fd) {
+    if (err) return callback(err);
+    fromFd(fd, options, function(err, zipfile) {
+      if (err) fs.close(fd, defaultCallback);
+      callback(err, zipfile);
+    });
+  });
+}
+
+function fromFd(fd, options, callback) {
+  if (typeof options === "function") {
+    callback = options;
+    options = null;
+  }
+  if (options == null) options = {};
+  if (options.autoClose == null) options.autoClose = false;
+  if (options.lazyEntries == null) options.lazyEntries = false;
+  if (options.decodeStrings == null) options.decodeStrings = true;
+  if (options.validateEntrySizes == null) options.validateEntrySizes = true;
+  if (options.strictFileNames == null) options.strictFileNames = false;
+  if (callback == null) callback = defaultCallback;
+  fs.fstat(fd, function(err, stats) {
+    if (err) return callback(err);
+    var reader = new fd_slicer.FdSlicer(fd);
+    fromRandomAccessReader(reader, stats.size, options, callback);
+  });
+}
+
+function fromBuffer(buffer, options, callback) {
+  if (typeof options === "function") {
+    callback = options;
+    options = null;
+  }
+  if (options == null) options = {};
+  options.autoClose = false;
+  if (options.lazyEntries == null) options.lazyEntries = false;
+  if (options.decodeStrings == null) options.decodeStrings = true;
+  if (options.validateEntrySizes == null) options.validateEntrySizes = true;
+  if (options.strictFileNames == null) options.strictFileNames = false;
+  var reader = new fd_slicer.BufferSlicer(buffer);
+  fromRandomAccessReader(reader, buffer.length, options, callback);
+}
+
+function fromRandomAccessReader(reader, totalSize, options, callback) {
+  if (typeof options === "function") {
+    callback = options;
+    options = null;
+  }
+  if (options == null) options = {};
+  if (options.autoClose == null) options.autoClose = true;
+  if (options.lazyEntries == null) options.lazyEntries = false;
+  if (options.decodeStrings == null) options.decodeStrings = true;
+  var decodeStrings = !!options.decodeStrings;
+  if (options.validateEntrySizes == null) options.validateEntrySizes = true;
+  if (options.strictFileNames == null) options.strictFileNames = false;
+  if (callback == null) callback = defaultCallback;
+  if (typeof totalSize !== "number") throw new Error("expected totalSize parameter to be a number");
+  if (totalSize > Number.MAX_SAFE_INTEGER) {
+    throw new Error("zip file too large. only file sizes up to 2^52 are supported due to JavaScript's Number type being an IEEE 754 double.");
+  }
+
+  // the matching unref() call is in zipfile.close()
+  reader.ref();
+
+  // eocdr means End of Central Directory Record.
+  // search backwards for the eocdr signature.
+  // the last field of the eocdr is a variable-length comment.
+  // the comment size is encoded in a 2-byte field in the eocdr, which we can't find without trudging backwards through the comment to find it.
+  // as a consequence of this design decision, it's possible to have ambiguous zip file metadata if a coherent eocdr was in the comment.
+  // we search backwards for a eocdr signature, and hope that whoever made the zip file was smart enough to forbid the eocdr signature in the comment.
+  var eocdrWithoutCommentSize = 22;
+  var zip64EocdlSize = 20; // Zip64 end of central directory locator
+  var maxCommentSize = 0xffff; // 2-byte size
+  var bufferSize = Math.min(zip64EocdlSize + eocdrWithoutCommentSize + maxCommentSize, totalSize);
+  var buffer = newBuffer(bufferSize);
+  var bufferReadStart = totalSize - buffer.length;
+  readAndAssertNoEof(reader, buffer, 0, bufferSize, bufferReadStart, function(err) {
+    if (err) return callback(err);
+    for (var i = bufferSize - eocdrWithoutCommentSize; i >= 0; i -= 1) {
+      if (buffer.readUInt32LE(i) !== 0x06054b50) continue;
+      // found eocdr
+      var eocdrBuffer = buffer.subarray(i);
+
+      // 0 - End of central directory signature = 0x06054b50
+      // 4 - Number of this disk
+      var diskNumber = eocdrBuffer.readUInt16LE(4);
+      // 6 - Disk where central directory starts
+      // 8 - Number of central directory records on this disk
+      // 10 - Total number of central directory records
+      var entryCount = eocdrBuffer.readUInt16LE(10);
+      // 12 - Size of central directory (bytes)
+      // 16 - Offset of start of central directory, relative to start of archive
+      var centralDirectoryOffset = eocdrBuffer.readUInt32LE(16);
+      // 20 - Comment length
+      var commentLength = eocdrBuffer.readUInt16LE(20);
+      var expectedCommentLength = eocdrBuffer.length - eocdrWithoutCommentSize;
+      if (commentLength !== expectedCommentLength) {
+        return callback(new Error("Invalid comment length. Expected: " + expectedCommentLength + ". Found: " + commentLength + ". Are there extra bytes at the end of the file? Or is the end of central dir signature `PK☺☻` in the comment?"));
+      }
+      // 22 - Comment
+      // the encoding is always cp437.
+      var comment = decodeStrings ? decodeBuffer(eocdrBuffer.subarray(22), false)
+                                  : eocdrBuffer.subarray(22);
+
+      // Look for a Zip64 end of central directory locator
+      if (i - zip64EocdlSize >= 0 && buffer.readUInt32LE(i - zip64EocdlSize) === 0x07064b50) {
+        // ZIP64 format
+        var zip64EocdlBuffer = buffer.subarray(i - zip64EocdlSize, i - zip64EocdlSize + zip64EocdlSize);
+        // 0 - zip64 end of central dir locator signature = 0x07064b50
+        // 4 - number of the disk with the start of the zip64 end of central directory
+        // 8 - relative offset of the zip64 end of central directory record
+        var zip64EocdrOffset = readUInt64LE(zip64EocdlBuffer, 8);
+        // 16 - total number of disks
+
+        // ZIP64 end of central directory record
+        var zip64EocdrBuffer = newBuffer(56);
+        return readAndAssertNoEof(reader, zip64EocdrBuffer, 0, zip64EocdrBuffer.length, zip64EocdrOffset, function(err) {
+          if (err) return callback(err);
+
+          // 0 - zip64 end of central dir signature                           4 bytes  (0x06064b50)
+          if (zip64EocdrBuffer.readUInt32LE(0) !== 0x06064b50) {
+            return callback(new Error("invalid zip64 end of central directory record signature"));
+          }
+          // 4 - size of zip64 end of central directory record                8 bytes
+          // 12 - version made by                                             2 bytes
+          // 14 - version needed to extract                                   2 bytes
+          // 16 - number of this disk                                         4 bytes
+          diskNumber = zip64EocdrBuffer.readUInt32LE(16);
+          if (diskNumber !== 0) {
+            // Check this only after zip64 overrides. See #118.
+            return callback(new Error("multi-disk zip files are not supported: found disk number: " + diskNumber));
+          }
+          // 20 - number of the disk with the start of the central directory  4 bytes
+          // 24 - total number of entries in the central directory on this disk         8 bytes
+          // 32 - total number of entries in the central directory            8 bytes
+          entryCount = readUInt64LE(zip64EocdrBuffer, 32);
+          // 40 - size of the central directory                               8 bytes
+          // 48 - offset of start of central directory with respect to the starting disk number     8 bytes
+          centralDirectoryOffset = readUInt64LE(zip64EocdrBuffer, 48);
+          // 56 - zip64 extensible data sector                                (variable size)
+          return callback(null, new ZipFile(reader, centralDirectoryOffset, totalSize, entryCount, comment, options.autoClose, options.lazyEntries, decodeStrings, options.validateEntrySizes, options.strictFileNames));
+        });
+      }
+
+      // Not ZIP64 format
+      if (diskNumber !== 0) {
+        return callback(new Error("multi-disk zip files are not supported: found disk number: " + diskNumber));
+      }
+      return callback(null, new ZipFile(reader, centralDirectoryOffset, totalSize, entryCount, comment, options.autoClose, options.lazyEntries, decodeStrings, options.validateEntrySizes, options.strictFileNames));
+
+    }
+
+    // Not a zip file.
+    callback(new Error("End of central directory record signature not found. Either not a zip file, or file is truncated."));
+  });
+}
+
+util.inherits(ZipFile, EventEmitter);
+function ZipFile(reader, centralDirectoryOffset, fileSize, entryCount, comment, autoClose, lazyEntries, decodeStrings, validateEntrySizes, strictFileNames) {
+  var self = this;
+  EventEmitter.call(self);
+  self.reader = reader;
+  // forward close events
+  self.reader.on("error", function(err) {
+    // error closing the fd
+    emitError(self, err);
+  });
+  self.reader.once("close", function() {
+    self.emit("close");
+  });
+  self.readEntryCursor = centralDirectoryOffset;
+  self.fileSize = fileSize;
+  self.entryCount = entryCount;
+  self.comment = comment;
+  self.entriesRead = 0;
+  self.autoClose = !!autoClose;
+  self.lazyEntries = !!lazyEntries;
+  self.decodeStrings = !!decodeStrings;
+  self.validateEntrySizes = !!validateEntrySizes;
+  self.strictFileNames = !!strictFileNames;
+  self.isOpen = true;
+  self.emittedError = false;
+  self.hasEachEntryBeenCalled = false;
+
+  if (!self.lazyEntries) self._readEntry();
+}
+ZipFile.prototype.close = function() {
+  if (!this.isOpen) return;
+  this.isOpen = false;
+  this.reader.unref();
+};
+
+function emitErrorAndAutoClose(self, err) {
+  if (self.autoClose) self.close();
+  emitError(self, err);
+}
+function emitError(self, err) {
+  if (self.emittedError) return;
+  self.emittedError = true;
+  self.emit("error", err);
+}
+
+ZipFile.prototype.readEntry = function() {
+  if (!this.lazyEntries) throw new Error("readEntry() called without lazyEntries:true");
+  this._readEntry();
+};
+ZipFile.prototype._readEntry = function() {
+  var self = this;
+  if (self.entryCount === self.entriesRead) {
+    // done with metadata
+    setImmediate(function() {
+      if (self.autoClose) self.close();
+      if (self.emittedError) return;
+      self.emit("end");
+    });
+    return;
+  }
+  if (self.emittedError) return;
+  var buffer = newBuffer(46);
+  readAndAssertNoEof(self.reader, buffer, 0, buffer.length, self.readEntryCursor, function(err) {
+    if (err) return emitErrorAndAutoClose(self, err);
+    if (self.emittedError) return;
+    var entry = new Entry();
+    // 0 - Central directory file header signature
+    var signature = buffer.readUInt32LE(0);
+    if (signature !== 0x02014b50) return emitErrorAndAutoClose(self, new Error("invalid central directory file header signature: 0x" + signature.toString(16)));
+    // 4 - Version made by
+    entry.versionMadeBy = buffer.readUInt16LE(4);
+    // 6 - Version needed to extract (minimum)
+    entry.versionNeededToExtract = buffer.readUInt16LE(6);
+    // 8 - General purpose bit flag
+    entry.generalPurposeBitFlag = buffer.readUInt16LE(8);
+    // 10 - Compression method
+    entry.compressionMethod = buffer.readUInt16LE(10);
+    // 12 - File last modification time
+    entry.lastModFileTime = buffer.readUInt16LE(12);
+    // 14 - File last modification date
+    entry.lastModFileDate = buffer.readUInt16LE(14);
+    // 16 - CRC-32
+    entry.crc32 = buffer.readUInt32LE(16);
+    // 20 - Compressed size
+    entry.compressedSize = buffer.readUInt32LE(20);
+    // 24 - Uncompressed size
+    entry.uncompressedSize = buffer.readUInt32LE(24);
+    // 28 - File name length (n)
+    entry.fileNameLength = buffer.readUInt16LE(28);
+    // 30 - Extra field length (m)
+    entry.extraFieldLength = buffer.readUInt16LE(30);
+    // 32 - File comment length (k)
+    entry.fileCommentLength = buffer.readUInt16LE(32);
+    // 34 - Disk number where file starts
+    // 36 - Internal file attributes
+    entry.internalFileAttributes = buffer.readUInt16LE(36);
+    // 38 - External file attributes
+    entry.externalFileAttributes = buffer.readUInt32LE(38);
+    // 42 - Relative offset of local file header
+    entry.relativeOffsetOfLocalHeader = buffer.readUInt32LE(42);
+
+    if (entry.generalPurposeBitFlag & 0x40) return emitErrorAndAutoClose(self, new Error("strong encryption is not supported"));
+
+    self.readEntryCursor += 46;
+
+    buffer = newBuffer(entry.fileNameLength + entry.extraFieldLength + entry.fileCommentLength);
+    readAndAssertNoEof(self.reader, buffer, 0, buffer.length, self.readEntryCursor, function(err) {
+      if (err) return emitErrorAndAutoClose(self, err);
+      if (self.emittedError) return;
+      // 46 - File name
+      entry.fileNameRaw = buffer.subarray(0, entry.fileNameLength);
+      // 46+n - Extra field
+      var fileCommentStart = entry.fileNameLength + entry.extraFieldLength;
+      entry.extraFieldRaw = buffer.subarray(entry.fileNameLength, fileCommentStart);
+      // 46+n+m - File comment
+      entry.fileCommentRaw = buffer.subarray(fileCommentStart, fileCommentStart + entry.fileCommentLength);
+
+      // Parse the extra fields, which we need for processing other fields.
+      try {
+        entry.extraFields = parseExtraFields(entry.extraFieldRaw);
+      } catch (err) {
+        return emitErrorAndAutoClose(self, err);
+      }
+
+      // Interpret strings according to bit flags, extra fields, and options.
+      if (self.decodeStrings) {
+        var isUtf8 = (entry.generalPurposeBitFlag & 0x800) !== 0;
+        entry.fileComment = decodeBuffer(entry.fileCommentRaw, isUtf8);
+        entry.fileName = getFileNameLowLevel(entry.generalPurposeBitFlag, entry.fileNameRaw, entry.extraFields, self.strictFileNames);
+        var errorMessage = validateFileName(entry.fileName);
+        if (errorMessage != null) return emitErrorAndAutoClose(self, new Error(errorMessage));
+      } else {
+        entry.fileComment = entry.fileCommentRaw;
+        entry.fileName = entry.fileNameRaw;
+      }
+      // Maintain API compatibility. See https://github.com/thejoshwolfe/yauzl/issues/47
+      entry.comment = entry.fileComment;
+
+      self.readEntryCursor += buffer.length;
+      self.entriesRead += 1;
+
+      // Check for the Zip64 Extended Information Extra Field.
+      for (var i = 0; i < entry.extraFields.length; i++) {
+        var extraField = entry.extraFields[i];
+        if (extraField.id !== 0x0001) continue;
+        // Found it.
+
+        var zip64EiefBuffer = extraField.data;
+        var index = 0;
+        // 0 - Original Size          8 bytes
+        if (entry.uncompressedSize === 0xffffffff) {
+          if (index + 8 > zip64EiefBuffer.length) {
+            return emitErrorAndAutoClose(self, new Error("zip64 extended information extra field does not include uncompressed size"));
+          }
+          entry.uncompressedSize = readUInt64LE(zip64EiefBuffer, index);
+          index += 8;
+        }
+        // 8 - Compressed Size        8 bytes
+        if (entry.compressedSize === 0xffffffff) {
+          if (index + 8 > zip64EiefBuffer.length) {
+            return emitErrorAndAutoClose(self, new Error("zip64 extended information extra field does not include compressed size"));
+          }
+          entry.compressedSize = readUInt64LE(zip64EiefBuffer, index);
+          index += 8;
+        }
+        // 16 - Relative Header Offset 8 bytes
+        if (entry.relativeOffsetOfLocalHeader === 0xffffffff) {
+          if (index + 8 > zip64EiefBuffer.length) {
+            return emitErrorAndAutoClose(self, new Error("zip64 extended information extra field does not include relative header offset"));
+          }
+          entry.relativeOffsetOfLocalHeader = readUInt64LE(zip64EiefBuffer, index);
+          index += 8;
+        }
+        // 24 - Disk Start Number      4 bytes
+
+        break;
+      }
+
+      // validate file size
+      if (self.validateEntrySizes && entry.compressionMethod === 0) {
+        var expectedCompressedSize = entry.uncompressedSize;
+        if (entry.isEncrypted()) {
+          // traditional encryption prefixes the file data with a header
+          expectedCompressedSize += 12;
+        }
+        if (entry.compressedSize !== expectedCompressedSize) {
+          var msg = "compressed/uncompressed size mismatch for stored file: " + entry.compressedSize + " != " + entry.uncompressedSize;
+          return emitErrorAndAutoClose(self, new Error(msg));
+        }
+      }
+
+      self.emit("entry", entry);
+
+      if (!self.lazyEntries) self._readEntry();
+    });
+  });
+};
+
+ZipFile.prototype.eachEntry = function() {
+  const self = this;
+  if (!self.lazyEntries) throw new Error("eachEntry() requires lazyEntries: true");
+  if (self.hasEachEntryBeenCalled) throw new Error("eachEntry() must only be called once per ZipFile");
+  self.hasEachEntryBeenCalled = true;
+
+  let pendingResolveReject = null;
+  self.on("entry", onEntry);
+  self.on("end", onEnd);
+  self.on("error", onError);
+  function cleanup() {
+    self.removeListener("entry", onEntry);
+    self.removeListener("end", onEnd);
+    self.removeListener("error", onError);
+    if (self.autoClose) self.close();
+  }
+
+  function onEntry(entry) {
+    let {resolve} = pendingResolveReject;
+    pendingResolveReject = null;
+    resolve({value: entry});
+  }
+  function onEnd() {
+    let {resolve} = pendingResolveReject;
+    pendingResolveReject = null;
+    cleanup();
+    resolve({done: true});
+  }
+  function onError(err) {
+    let {reject} = pendingResolveReject;
+    pendingResolveReject = null;
+    cleanup();
+    reject(err);
+  }
+
+  return {
+    [Symbol.asyncIterator]() {
+      // Called once by `for await...of`.
+      return this;
+    },
+    next() {
+      // Called on each iteration in a `for await...of`.
+      const promise = new Promise((resolve, reject) => {
+        if (pendingResolveReject != null) throw new Error("next() called before previous Promise was resolved.");
+        pendingResolveReject = {resolve, reject};
+      });
+      self.readEntry();
+      return promise;
+    },
+    return(value) {
+      // Called when breaking, returning, throwing out of a `for await...of`.
+      cleanup();
+      return Promise.resolve({done: true, value});
+    },
+    throw(value) {
+      // Almost never called. Something about `yield*` maybe?
+      cleanup();
+      return Promise.reject(value);
+    },
+  };
+};
+
+ZipFile.prototype.openReadStream = function(entry, options, callback) {
+  var self = this;
+  // parameter validation
+  var relativeStart = 0;
+  var relativeEnd = entry.compressedSize;
+  if (callback == null) {
+    callback = options;
+    options = null;
+  }
+  if (options == null) {
+    options = {};
+  } else {
+    if (options.decodeFileData === false) {
+      // new, simple option
+      if (options.decrypt != null) {
+        throw new Error("cannot use options.decrypt when options.decodeFileData === false");
+      }
+      if (options.decompress != null) {
+        throw new Error("cannot use options.decompress when options.decodeFileData === false");
+      }
+      // start and end are allowed
+    } else {
+      // old, complicated options
+      if (options.decrypt != null) {
+        if (!entry.isEncrypted()) {
+          throw new Error("options.decrypt can only be specified for encrypted entries. See also option decodeFileData.");
+        }
+        if (options.decrypt !== false) throw new Error("invalid options.decrypt value: " + options.decrypt);
+        if (entry.isCompressed()) {
+          if (options.decompress !== false) throw new Error("entry is encrypted and compressed, and options.decompress !== false. See also option decodeFileData.");
+        }
+      }
+      if (options.decompress != null) {
+        if (!entry.isCompressed()) {
+          throw new Error("options.decompress can only be specified for compressed entries. See also option decodeFileData.");
+        }
+        if (!(options.decompress === false || options.decompress === true)) {
+          throw new Error("invalid options.decompress value: " + options.decompress);
+        }
+        decompress = options.decompress;
+      }
+    }
+    if (options.start != null) {
+      relativeStart = options.start;
+      if (relativeStart < 0) throw new Error("options.start < 0");
+      if (relativeStart > entry.compressedSize) throw new Error("options.start > entry.compressedSize");
+    }
+    if (options.end != null) {
+      relativeEnd = options.end;
+      if (relativeEnd < 0) throw new Error("options.end < 0");
+      if (relativeEnd > entry.compressedSize) throw new Error("options.end > entry.compressedSize");
+      if (relativeEnd < relativeStart) throw new Error("options.end < options.start");
+    }
+  }
+  var rawMode = (
+    options.decodeFileData === false || // Explicitly requested raw.
+    (
+      (entry.compressionMethod === 0 || // Naturally without compression.
+        (entry.compressionMethod === 8 && options.decompress === false) // Deprecated compression bypass option.
+      ) &&
+      (!entry.isEncrypted() || // Naturally without encryption.
+        options.decrypt === false // Deprecated encryption bypass option.
+      )
+    )
+  );
+  if (options.start != null || options.end != null) {
+    // Ensure slicing deals with raw data.
+    if (!rawMode) throw new Error("start/end range require options.decodeFileData === false for non-trivial encoded entries.");
+  }
+
+  // any further errors can either be caused by the zipfile,
+  // or were introduced in a minor version of yauzl,
+  // so should be passed to the client rather than thrown.
+  if (!self.isOpen) return callback(new Error("closed"));
+  if (entry.isEncrypted() && !rawMode) {
+    if (options.decrypt !== false) return callback(new Error("entry is encrypted, and options.decodeFileData !== false"));
+  }
+  var decompress;
+  if (rawMode) {
+    decompress = false;
+  } else if (entry.compressionMethod === 8) {
+    // 8 - The file is Deflated
+    decompress = options.decodeFileData !== true;
+  } else {
+    return callback(new Error("unsupported compression method: " + entry.compressionMethod));
+  }
+
+  self.readLocalFileHeader(entry, {minimal: true}, function(err, localFileHeader) {
+    if (err) return callback(err);
+    self.openReadStreamLowLevel(
+      localFileHeader.fileDataStart, entry.compressedSize,
+      relativeStart, relativeEnd,
+      decompress, entry.uncompressedSize,
+      callback);
+  });
+};
+
+ZipFile.prototype.openReadStreamLowLevel = function(fileDataStart, compressedSize, relativeStart, relativeEnd, decompress, uncompressedSize, callback) {
+  var self = this;
+
+  var fileDataEnd = fileDataStart + compressedSize;
+  var readStream = self.reader.createReadStream({
+    start: fileDataStart + relativeStart,
+    end: fileDataStart + relativeEnd,
+  });
+  var endpointStream = readStream;
+  if (decompress) {
+    var destroyed = false;
+    var inflateFilter = zlib.createInflateRaw();
+    readStream.on("error", function(err) {
+      // setImmediate here because errors can be emitted during the first call to pipe()
+      setImmediate(function() {
+        if (!destroyed) inflateFilter.emit("error", err);
+      });
+    });
+    readStream.pipe(inflateFilter);
+
+    if (self.validateEntrySizes) {
+      endpointStream = new AssertByteCountStream(uncompressedSize);
+      inflateFilter.on("error", function(err) {
+        // forward zlib errors to the client-visible stream
+        setImmediate(function() {
+          if (!destroyed) endpointStream.emit("error", err);
+        });
+      });
+      inflateFilter.pipe(endpointStream);
+    } else {
+      // the zlib filter is the client-visible stream
+      endpointStream = inflateFilter;
+    }
+    // this is part of yauzl's API, so implement this function on the client-visible stream
+    installDestroyFn(endpointStream, function() {
+      destroyed = true;
+      if (inflateFilter !== endpointStream) inflateFilter.unpipe(endpointStream);
+      readStream.unpipe(inflateFilter);
+      // TODO: the inflateFilter may cause a memory leak. see Issue #27.
+      readStream.destroy();
+    });
+  }
+  callback(null, endpointStream);
+};
+
+ZipFile.prototype.readLocalFileHeader = function(entry, options, callback) {
+  var self = this;
+  if (callback == null) {
+    callback = options;
+    options = null;
+  }
+  if (options == null) options = {};
+
+  self.reader.ref();
+  var buffer = newBuffer(30);
+  readAndAssertNoEof(self.reader, buffer, 0, buffer.length, entry.relativeOffsetOfLocalHeader, function(err) {
+    try {
+      if (err) return callback(err);
+      // 0 - Local file header signature = 0x04034b50
+      var signature = buffer.readUInt32LE(0);
+      if (signature !== 0x04034b50) {
+        return callback(new Error("invalid local file header signature: 0x" + signature.toString(16)));
+      }
+
+      var fileNameLength = buffer.readUInt16LE(26);
+      var extraFieldLength = buffer.readUInt16LE(28);
+      var fileDataStart = entry.relativeOffsetOfLocalHeader + 30 + fileNameLength + extraFieldLength;
+      // We now have enough information to do this bounds check.
+      if (fileDataStart + entry.compressedSize > self.fileSize) {
+        return callback(new Error("file data overflows file bounds: " +
+            fileDataStart + " + " + entry.compressedSize + " > " + self.fileSize));
+      }
+
+      if (options.minimal) {
+        return callback(null, {fileDataStart: fileDataStart});
+      }
+
+      var localFileHeader = new LocalFileHeader();
+      localFileHeader.fileDataStart = fileDataStart;
+
+      // 4 - Version needed to extract (minimum)
+      localFileHeader.versionNeededToExtract = buffer.readUInt16LE(4);
+      // 6 - General purpose bit flag
+      localFileHeader.generalPurposeBitFlag = buffer.readUInt16LE(6);
+      // 8 - Compression method
+      localFileHeader.compressionMethod = buffer.readUInt16LE(8);
+      // 10 - File last modification time
+      localFileHeader.lastModFileTime = buffer.readUInt16LE(10);
+      // 12 - File last modification date
+      localFileHeader.lastModFileDate = buffer.readUInt16LE(12);
+      // 14 - CRC-32
+      localFileHeader.crc32 = buffer.readUInt32LE(14);
+      // 18 - Compressed size
+      localFileHeader.compressedSize = buffer.readUInt32LE(18);
+      // 22 - Uncompressed size
+      localFileHeader.uncompressedSize = buffer.readUInt32LE(22);
+      // 26 - File name length (n)
+      localFileHeader.fileNameLength = fileNameLength;
+      // 28 - Extra field length (m)
+      localFileHeader.extraFieldLength = extraFieldLength;
+      // 30 - File name
+      // 30+n - Extra field
+
+      buffer = newBuffer(fileNameLength + extraFieldLength);
+      self.reader.ref();
+      readAndAssertNoEof(self.reader, buffer, 0, buffer.length, entry.relativeOffsetOfLocalHeader + 30, function(err) {
+        try {
+          if (err) return callback(err);
+          localFileHeader.fileName = buffer.subarray(0, fileNameLength);
+          localFileHeader.extraField = buffer.subarray(fileNameLength);
+          return callback(null, localFileHeader);
+        } finally {
+          self.reader.unref();
+        }
+      });
+    } finally {
+      self.reader.unref();
+    }
+  });
+};
+
+ZipFile.prototype.openReadStreamPromise = function(entry, options) {
+  return new Promise((resolve, reject) => {
+    this.openReadStream(entry, options, function(err, readStream) {
+      if (err) return reject(err);
+      resolve(readStream);
+    });
+  });
+};
+ZipFile.prototype.openReadStreamLowLevelPromise = function(fileDataStart, compressedSize, relativeStart, relativeEnd, decompress, uncompressedSize) {
+  return new Promise((resolve, reject) => {
+    this.openReadStream(fileDataStart, compressedSize, relativeStart, relativeEnd, decompress, uncompressedSize, function(err, readStream) {
+      if (err) return reject(err);
+      resolve(readStream);
+    });
+  });
+};
+ZipFile.prototype.readLocalFileHeaderPromise = function(entry, options) {
+  return new Promise((resolve, reject) => {
+    this.readLocalFileHeader(entry, options, function(err, localFileHeader) {
+      if (err) return reject(err);
+      resolve(localFileHeader);
+    });
+  });
+};
+
+function Entry() {
+}
+Entry.prototype.getLastModDate = function(options) {
+  if (options == null) options = {};
+
+  if (!options.forceDosFormat) {
+    // Check extended fields.
+    for (var i = 0; i < this.extraFields.length; i++) {
+      var extraField = this.extraFields[i];
+      if (extraField.id === 0x5455) {
+        // Info-ZIP "universal timestamp" extended field (`0x5455` aka `"UT"`).
+        // See the Info-ZIP source code unix/unix.c:set_extra_field() and zipfile.c:ef_scan_ut_time().
+        var data = extraField.data;
+        if (data.length < 5) continue; // Too short.
+        // The flags define which of the three fields are present: mtime, atime, ctime.
+        // We only care about mtime.
+        // Also, ctime is never included in practice.
+        // And also, atime is only included in the local file header for some reason
+        // despite the flags lying about its inclusion in the central header.
+        var flags = data[0];
+        var HAS_MTIME = 1;
+        if (!(flags & HAS_MTIME)) continue; // This will realistically never happen.
+        // Although the positions of all of the fields shift around depending on the presence of other fields,
+        // mtime is always first if present, and that's the only one we care about.
+        var posixTimestamp = data.readInt32LE(1);
+        return new Date(posixTimestamp * 1000);
+      } else if (extraField.id === 0x000a) {
+        var data = extraField.data;
+        if (data.length !== 32) continue; // The length is always the same.
+        // 4 bytes reserved
+        // 2 bytes Tag
+        if (data.readUInt16LE(4) !== 1) continue; // Tag1 is actually the only defined Tag.
+        // 2 bytes Size
+        if (data.readUInt16LE(6) !== 24) continue; // Size is always 24.
+        // 8 bytes Mtime
+        var hundredNanoSecondsSince1601 = data.readUInt32LE(8) + 4294967296 * data.readInt32LE(12);
+        // Convert from NTFS to POSIX milliseconds.
+        // The big number below is the milliseconds between year 1601 and year 1970
+        // (i.e. the negative POSIX timestamp of 1601-01-01 00:00:00Z)
+        var millisecondsSince1970 = hundredNanoSecondsSince1601 / 10000 - 11644473600000;
+        // Note on numeric precision: JavaScript Number objects lose precision above Number.MAX_SAFE_INTEGER,
+        // and NTFS timestamps are typically much bigger than that limit.
+        // (MAX_SAFE_INTEGER would represent 1629-07-17T23:58:45.475Z.)
+        // However, we're losing precision in the conversion from 100nanosecond units to millisecond units anyway,
+        // and the time at which we also lose 1-millisecond precision is year 275760, the JavaScript Date limit (by design).
+        // Up through the year 2057, this conversion only drops 4 bits of precision,
+        // which is well under the 13-14 bits ratio between the milliseconds and 100nanoseconds.
+        return new Date(millisecondsSince1970);
+      }
+    }
+  }
+
+  // Fallback to non-extended encoding.
+  return dosDateTimeToDate(this.lastModFileDate, this.lastModFileTime, options.timezone);
+};
+
+Entry.prototype.canDecodeFileData = function() {
+  return (
+    !this.isEncrypted() &&
+    (this.compressionMethod === 0 || this.compressionMethod === 8)
+  );
+};
+Entry.prototype.isEncrypted = function() {
+  return (this.generalPurposeBitFlag & 0x1) !== 0;
+};
+Entry.prototype.isCompressed = function() {
+  return this.compressionMethod === 8;
+};
+
+function LocalFileHeader() {
+}
+
+function dosDateTimeToDate(date, time, timezone) {
+  var day = date & 0x1f; // 1-31
+  var month = (date >> 5 & 0xf) - 1; // 1-12, 0-11
+  var year = (date >> 9 & 0x7f) + 1980; // 0-128, 1980-2108
+
+  var millisecond = 0;
+  var second = (time & 0x1f) * 2; // 0-29, 0-58 (even numbers)
+  var minute = time >> 5 & 0x3f; // 0-59
+  var hour = time >> 11 & 0x1f; // 0-23
+
+  if (timezone == null || timezone === "local") {
+    return new Date(year, month, day, hour, minute, second, millisecond);
+  } else if (timezone === "UTC") {
+    return new Date(Date.UTC(year, month, day, hour, minute, second, millisecond));
+  } else {
+    throw new Error("unrecognized options.timezone: " + options.timezone);
+  }
+}
+
+function getFileNameLowLevel(generalPurposeBitFlag, fileNameBuffer, extraFields, strictFileNames) {
+  var fileName = null;
+
+  // check for Info-ZIP Unicode Path Extra Field (0x7075)
+  // see https://github.com/thejoshwolfe/yauzl/issues/33
+  for (var i = 0; i < extraFields.length; i++) {
+    var extraField = extraFields[i];
+    if (extraField.id === 0x7075) {
+      if (extraField.data.length < 6) {
+        // too short to be meaningful
+        continue;
+      }
+      // Version       1 byte      version of this extra field, currently 1
+      if (extraField.data.readUInt8(0) !== 1) {
+        // > Changes may not be backward compatible so this extra
+        // > field should not be used if the version is not recognized.
+        continue;
+      }
+      // NameCRC32     4 bytes     File Name Field CRC32 Checksum
+      var oldNameCrc32 = extraField.data.readUInt32LE(1);
+      if (crc32(fileNameBuffer) !== oldNameCrc32) {
+        // > If the CRC check fails, this UTF-8 Path Extra Field should be
+        // > ignored and the File Name field in the header should be used instead.
+        continue;
+      }
+      // UnicodeName   Variable    UTF-8 version of the entry File Name
+      fileName = decodeBuffer(extraField.data.subarray(5), true);
+      break;
+    }
+  }
+
+  if (fileName == null) {
+    // The typical case.
+    var isUtf8 = (generalPurposeBitFlag & 0x800) !== 0;
+    fileName = decodeBuffer(fileNameBuffer, isUtf8);
+  }
+
+  if (!strictFileNames) {
+    // Allow backslash.
+    fileName = fileName.replace(/\\/g, "/");
+  }
+  return fileName;
+}
+
+function validateFileName(fileName) {
+  if (fileName.indexOf("\\") !== -1) {
+    return "invalid characters in fileName: " + fileName;
+  }
+  if (/^[a-zA-Z]:/.test(fileName) || /^\//.test(fileName)) {
+    return "absolute path: " + fileName;
+  }
+  if (fileName.split("/").indexOf("..") !== -1) {
+    return "invalid relative path: " + fileName;
+  }
+  // all good
+  return null;
+}
+
+function parseExtraFields(extraFieldBuffer) {
+  var extraFields = [];
+  var i = 0;
+  while (i < extraFieldBuffer.length - 3) {
+    var headerId = extraFieldBuffer.readUInt16LE(i + 0);
+    var dataSize = extraFieldBuffer.readUInt16LE(i + 2);
+    var dataStart = i + 4;
+    var dataEnd = dataStart + dataSize;
+    if (dataEnd > extraFieldBuffer.length) throw new Error("extra field length exceeds extra field buffer size");
+    var dataBuffer = extraFieldBuffer.subarray(dataStart, dataEnd);
+    extraFields.push({
+      id: headerId,
+      data: dataBuffer,
+    });
+    i = dataEnd;
+  }
+  return extraFields;
+}
+
+function readAndAssertNoEof(reader, buffer, offset, length, position, callback) {
+  if (length === 0) {
+    // fs.read will throw an out-of-bounds error if you try to read 0 bytes from a 0 byte file
+    return setImmediate(function() { callback(null, newBuffer(0)); });
+  }
+  reader.read(buffer, offset, length, position, function(err, bytesRead) {
+    if (err) return callback(err);
+    if (bytesRead < length) {
+      return callback(new Error("unexpected EOF"));
+    }
+    callback();
+  });
+}
+
+util.inherits(AssertByteCountStream, Transform);
+function AssertByteCountStream(byteCount) {
+  Transform.call(this);
+  this.actualByteCount = 0;
+  this.expectedByteCount = byteCount;
+}
+AssertByteCountStream.prototype._transform = function(chunk, encoding, cb) {
+  this.actualByteCount += chunk.length;
+  if (this.actualByteCount > this.expectedByteCount) {
+    var msg = "too many bytes in the stream. expected " + this.expectedByteCount + ". got at least " + this.actualByteCount;
+    return cb(new Error(msg));
+  }
+  cb(null, chunk);
+};
+AssertByteCountStream.prototype._flush = function(cb) {
+  if (this.actualByteCount < this.expectedByteCount) {
+    var msg = "not enough bytes in the stream. expected " + this.expectedByteCount + ". got only " + this.actualByteCount;
+    return cb(new Error(msg));
+  }
+  cb();
+};
+
+util.inherits(RandomAccessReader, EventEmitter);
+function RandomAccessReader() {
+  EventEmitter.call(this);
+  this.refCount = 0;
+}
+RandomAccessReader.prototype.ref = function() {
+  this.refCount += 1;
+};
+RandomAccessReader.prototype.unref = function() {
+  var self = this;
+  self.refCount -= 1;
+
+  if (self.refCount > 0) return;
+  if (self.refCount < 0) throw new Error("invalid unref");
+
+  self.close(onCloseDone);
+
+  function onCloseDone(err) {
+    if (err) return self.emit('error', err);
+    self.emit('close');
+  }
+};
+RandomAccessReader.prototype.createReadStream = function(options) {
+  if (options == null) options = {};
+  var start = options.start;
+  var end = options.end;
+  if (start === end) {
+    var emptyStream = new PassThrough();
+    setImmediate(function() {
+      emptyStream.end();
+    });
+    return emptyStream;
+  }
+  var stream = this._readStreamForRange(start, end);
+
+  var destroyed = false;
+  var refUnrefFilter = new RefUnrefFilter(this);
+  stream.on("error", function(err) {
+    setImmediate(function() {
+      if (!destroyed) refUnrefFilter.emit("error", err);
+    });
+  });
+  installDestroyFn(refUnrefFilter, function() {
+    stream.unpipe(refUnrefFilter);
+    refUnrefFilter.unref();
+    stream.destroy();
+  });
+
+  var byteCounter = new AssertByteCountStream(end - start);
+  refUnrefFilter.on("error", function(err) {
+    setImmediate(function() {
+      if (!destroyed) byteCounter.emit("error", err);
+    });
+  });
+  installDestroyFn(byteCounter, function() {
+    destroyed = true;
+    refUnrefFilter.unpipe(byteCounter);
+    refUnrefFilter.destroy();
+  });
+
+  return stream.pipe(refUnrefFilter).pipe(byteCounter);
+};
+RandomAccessReader.prototype._readStreamForRange = function(start, end) {
+  throw new Error("not implemented");
+};
+RandomAccessReader.prototype.read = function(buffer, offset, length, position, callback) {
+  var readStream = this.createReadStream({start: position, end: position + length});
+  var writeStream = new Writable();
+  var written = 0;
+  writeStream._write = function(chunk, encoding, cb) {
+    chunk.copy(buffer, offset + written, 0, chunk.length);
+    written += chunk.length;
+    cb();
+  };
+  writeStream.on("finish", callback);
+  readStream.on("error", function(error) {
+    callback(error);
+  });
+  readStream.pipe(writeStream);
+};
+RandomAccessReader.prototype.close = function(callback) {
+  setImmediate(callback);
+};
+
+util.inherits(RefUnrefFilter, PassThrough);
+function RefUnrefFilter(context) {
+  PassThrough.call(this);
+  this.context = context;
+  this.context.ref();
+  this.unreffedYet = false;
+}
+RefUnrefFilter.prototype._flush = function(cb) {
+  this.unref();
+  cb();
+};
+RefUnrefFilter.prototype.unref = function(cb) {
+  if (this.unreffedYet) return;
+  this.unreffedYet = true;
+  this.context.unref();
+};
+
+var cp437 = '\u0000☺☻♥♦♣♠•◘○◙♂♀♪♫☼►◄↕‼¶§▬↨↑↓→←∟↔▲▼ !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~⌂ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ';
+function decodeBuffer(buffer, isUtf8) {
+  if (isUtf8) {
+    return buffer.toString("utf8");
+  } else {
+    var result = "";
+    for (var i = 0; i < buffer.length; i++) {
+      result += cp437[buffer[i]];
+    }
+    return result;
+  }
+}
+
+function readUInt64LE(buffer, offset) {
+  // There is no native function for this, because we can't actually store 64-bit integers precisely.
+  // after 53 bits, JavaScript's Number type (IEEE 754 double) can't store individual integers anymore.
+  // but since 53 bits is a whole lot more than 32 bits, we do our best anyway.
+  // As of 2020, Node has added support for BigInt, which obviates this whole function,
+  // but yauzl hasn't been updated to depend on BigInt (yet?).
+  var lower32 = buffer.readUInt32LE(offset);
+  var upper32 = buffer.readUInt32LE(offset + 4);
+  // we can't use bitshifting here, because JavaScript bitshifting only works on 32-bit integers.
+  return upper32 * 0x100000000 + lower32;
+  // as long as we're bounds checking the result of this function against the total file size,
+  // we'll catch any overflow errors, because we already made sure the total file size was within reason.
+}
+
+// Node 10 deprecated new Buffer().
+var newBuffer;
+if (typeof Buffer.allocUnsafe === "function") {
+  newBuffer = function(len) {
+    return Buffer.allocUnsafe(len);
+  };
+} else {
+  newBuffer = function(len) {
+    return new Buffer(len);
+  };
+}
+
+// Node 8 introduced a proper destroy() implementation on writable streams.
+function installDestroyFn(stream, fn) {
+  if (typeof stream.destroy === "function") {
+    // New API.
+    stream._destroy = function(err, cb) {
+      fn();
+      if (cb != null) cb(err);
+    };
+  } else {
+    // Old API.
+    stream.destroy = fn;
+  }
+}
+
+function defaultCallback(err) {
+  if (err) throw err;
+}
+
+
+/***/ }),
+
 /***/ 8327:
 /***/ ((module) => {
 
@@ -81213,7 +82626,7 @@ const safeJSON = (text) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 //# sourceMappingURL=sleep.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/version.mjs
-const api_version_VERSION = '0.30.0'; // x-release-please-version
+const api_version_VERSION = '0.37.2'; // x-release-please-version
 //# sourceMappingURL=version.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/detect-platform.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
@@ -81486,6 +82899,11 @@ var node_modules_undici = __nccwpck_require__(4228);
 
 
 
+// For requests whose server responds only after finishing long work (no bytes
+// until then). Matches the ingress proxy-read-timeout so the client is never
+// the first to give up. undici's defaults are 300s, which would abort e.g. an
+// instance-side artifact upload that takes longer.
+const longRequestTimeouts = { headersTimeout: 3600000, bodyTimeout: 3600000 };
 class NodeProxyTransport {
     constructor() {
         this.websocketAgents = new Map();
@@ -81496,6 +82914,20 @@ class NodeProxyTransport {
             return fetch(input, {
                 ...(init ?? {}),
                 dispatcher: this.getEnvHttpProxyAgent(),
+            });
+        };
+        /**
+         * fetch for requests that legitimately receive no response bytes for many
+         * minutes (the server answers only after completing long work). Plain fetch
+         * would abort them at undici's default 300s headersTimeout.
+         * EnvHttpProxyAgent covers the no-proxy case too: it routes non-proxied
+         * origins through an internal Agent built with these same options.
+         */
+        this.fetchLongRequest = async (input, init) => {
+            this.longRequestDispatcher ?? (this.longRequestDispatcher = new node_modules_undici/* EnvHttpProxyAgent */.J2(longRequestTimeouts));
+            return fetch(input, {
+                ...(init ?? {}),
+                dispatcher: this.longRequestDispatcher,
             });
         };
     }
@@ -82191,6 +83623,25 @@ class APIResource {
     }
 }
 //# sourceMappingURL=resource.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/analytics.mjs
+// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+class Analytics extends APIResource {
+    /**
+     * Get analytics for the authenticated organization
+     */
+    get(query, options) {
+        return this._client.get('/v1/analytics', { query, ...options });
+    }
+    /**
+     * Returns per-instance analytics grouped by minute bucket for detailed chart
+     * views.
+     */
+    getInstances(query, options) {
+        return this._client.get('/v1/analytics/instances', { query, ...options });
+    }
+}
+//# sourceMappingURL=analytics.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/headers.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
@@ -82465,6 +83916,9 @@ class Assets extends assets_Assets {
     async getOrUpload(body, options) {
         const creationResponse = await this.getOrCreate({
             name: body.name ?? (0,external_path_.basename)(body.path),
+            kind: body.kind ?? 'App',
+            ...(body.platform && { platform: body.platform }),
+            ...(body.ttl && { ttl: body.ttl }),
         }, options);
         const data = await external_fs_.promises.readFile(body.path);
         const md5 = (0,external_crypto_.createHash)('md5').update(data).digest('hex');
@@ -82473,7 +83927,10 @@ class Assets extends assets_Assets {
                 id: creationResponse.id,
                 name: creationResponse.name,
                 signedDownloadUrl: creationResponse.signedDownloadUrl,
+                kind: creationResponse.kind,
+                ...(creationResponse.platform && { platform: creationResponse.platform }),
                 md5: creationResponse.md5,
+                ...(creationResponse.expiresAt && { expiresAt: creationResponse.expiresAt }),
             };
         }
         const uploadResponse = await proxy_transport_nodeProxyTransport.fetch(creationResponse.signedUploadUrl, {
@@ -82491,7 +83948,10 @@ class Assets extends assets_Assets {
             id: creationResponse.id,
             name: creationResponse.name,
             signedDownloadUrl: creationResponse.signedDownloadUrl,
+            kind: creationResponse.kind,
+            ...(creationResponse.platform && { platform: creationResponse.platform }),
             md5,
+            ...(creationResponse.expiresAt && { expiresAt: creationResponse.expiresAt }),
         };
     }
 }
@@ -82875,7 +84335,11 @@ function directInstanceHttpError(operation, status, text, headers) {
     if (status === 404) {
         return new NotFoundError(404, { message }, undefined, headers);
     }
-    return new Error(message);
+    return Object.assign(new Error(message), { status, body: text });
+}
+/** Narrow an unknown error to a direct-instance HTTP error with the given status. */
+function isDirectInstanceHttpError(err, status) {
+    return err instanceof Error && err.status === status;
 }
 //# sourceMappingURL=direct-instance-errors.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/folder-sync.mjs
@@ -83526,749 +84990,8 @@ function parseBuildSettingEntries(entries) {
     return settings;
 }
 //# sourceMappingURL=build-settings.mjs.map
-;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/xcode-instances-helpers.mjs
-
-
-
-
-
-
-
-
-
-
-function xcode_instances_helpers_createLogger(logLevel) {
-    const shouldLog = (level) => {
-        const levels = ['none', 'error', 'warn', 'info', 'debug'];
-        return levels.indexOf(logLevel) >= levels.indexOf(level);
-    };
-    return (level, msg) => {
-        if (!shouldLog(level))
-            return;
-        const prefix = '[XcodeInstance]';
-        if (level === 'error' || level === 'warn') {
-            console[level](prefix, msg);
-        }
-        else {
-            console.log(prefix, msg);
-        }
-    };
-}
-function normalizeWorkspaceRelativePath(remotePath) {
-    if (remotePath === '' ||
-        remotePath.startsWith('/') ||
-        remotePath.includes('\\') ||
-        remotePath.includes('\0')) {
-        throw new Error(`invalid sandbox home path from server: ${remotePath}`);
-    }
-    const parts = remotePath.split('/');
-    if (parts.some((part) => part === '' || part === '.' || part === '..')) {
-        throw new Error(`invalid sandbox home path from server: ${remotePath}`);
-    }
-    return parts.join('/');
-}
-async function fetchSandboxInfo(apiUrl, token) {
-    const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/info`, {
-        method: 'GET',
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
-    const body = await readJsonResponse(res, 'GET /info');
-    if (!body.homeDir) {
-        throw new Error('GET /info response is missing homeDir');
-    }
-    return {
-        homeDir: normalizeWorkspaceRelativePath(body.homeDir),
-    };
-}
-async function readJsonResponse(res, operation) {
-    const text = await res.text();
-    if (!res.ok) {
-        throw directInstanceHttpError(operation, res.status, text, res.headers);
-    }
-    if (!text.trim()) {
-        throw new Error(`${operation} returned an empty response`);
-    }
-    return JSON.parse(text);
-}
-class XcodeInstances extends xcode_instances_XcodeInstances {
-    async createClient(params) {
-        let apiUrl;
-        let token;
-        if ('instance' in params) {
-            if (!params.instance.status.apiUrl) {
-                throw new Error('Instance not ready: apiUrl is not available');
-            }
-            apiUrl = params.instance.status.apiUrl;
-            token = params.instance.status.token;
-        }
-        else {
-            apiUrl = params.apiUrl;
-            token = params.token;
-        }
-        const log = xcode_instances_helpers_createLogger(params.logLevel ?? 'info');
-        const client = this._client;
-        let sandboxInfoPromise;
-        const getSandboxInfo = () => {
-            sandboxInfoPromise ?? (sandboxInfoPromise = fetchSandboxInfo(apiUrl, token));
-            return sandboxInfoPromise;
-        };
-        return {
-            async sync(localCodePath, opts) {
-                const resolvedPath = external_path_.resolve(localCodePath);
-                const folderName = external_path_.basename(resolvedPath);
-                const hash = external_crypto_.createHash('sha1').update(resolvedPath).digest('hex').slice(0, 8);
-                const cacheKey = `limsync-cache-${folderName}-${hash}`;
-                const basisCacheDir = opts?.basisCacheDir ?? external_path_.join(external_os_namespaceObject.tmpdir(), cacheKey);
-                const sandboxInfo = opts?.additionalFiles && opts.additionalFiles.length > 0 ? await getSandboxInfo() : undefined;
-                const additionalFiles = opts?.additionalFiles?.map((file) => ({
-                    localPath: file.localPath,
-                    remotePath: sandboxInfo && file.remotePath.startsWith('~/') ?
-                        `${sandboxInfo.homeDir}/${file.remotePath.slice(2)}`
-                        : file.remotePath,
-                }));
-                const codeSyncOpts = {
-                    apiUrl,
-                    token,
-                    udid: cacheKey,
-                    install: opts?.install ?? true,
-                    ignoreFn: await folder_sync_ignore_createIgnoreFn(localCodePath, {
-                        basisCacheDir,
-                        log,
-                        additional: (relativePath) => {
-                            if (relativePath.startsWith('build/') ||
-                                relativePath.startsWith('.build/') ||
-                                relativePath.startsWith('DerivedData/') ||
-                                relativePath.startsWith('Index.noindex/') ||
-                                relativePath.startsWith('ModuleCache.noindex/') ||
-                                relativePath.startsWith('.index-build/')) {
-                                return true;
-                            }
-                            if (relativePath.startsWith('.swiftpm/') ||
-                                relativePath.startsWith('Pods/') ||
-                                relativePath.startsWith('Carthage/Build/')) {
-                                return true;
-                            }
-                            if (relativePath.includes('/xcuserdata/')) {
-                                return true;
-                            }
-                            if (relativePath.includes('.dSYM/')) {
-                                return true;
-                            }
-                            if (opts?.ignore?.(relativePath)) {
-                                return true;
-                            }
-                            return false;
-                        },
-                    }),
-                    basisCacheDir,
-                    watch: opts?.watch ?? true,
-                    maxPatchBytes: opts?.maxPatchBytes ?? 4 * 1024 * 1024,
-                    launchMode: 'ForegroundIfRunning',
-                    log,
-                    ...(additionalFiles ? { additionalFiles } : {}),
-                };
-                const result = await folder_sync_syncFolder(localCodePath, codeSyncOpts);
-                if (result.stopWatching) {
-                    return { stopWatching: result.stopWatching };
-                }
-                return {};
-            },
-            xcodebuild(settings, options) {
-                if (options?.reactNative?.devServerURL && settings?.configuration === 'Release') {
-                    throw new Error('reactNative.devServerURL is only supported for Debug builds');
-                }
-                if (options?.buildSettings) {
-                    validateBuildSettings(options.buildSettings);
-                }
-                const request = {
-                    command: 'xcodebuild',
-                    ...(settings && { xcodebuild: settings }),
-                    ...(options?.reactNative && { reactNative: options.reactNative }),
-                    ...(options?.signing && { signing: options.signing }),
-                    ...(options?.buildSettings && { buildSettings: options.buildSettings }),
-                };
-                if (options?.upload && 'assetName' in options.upload) {
-                    const uploadName = options.upload.assetName;
-                    const requestPromise = client.assets
-                        .getOrCreate({ name: uploadName })
-                        .then((asset) => {
-                        request.signedUploadUrl = asset.signedUploadUrl;
-                        request.additionalMetadata = { signedDownloadUrl: asset.signedDownloadUrl };
-                        return request;
-                    })
-                        .catch((err) => {
-                        throw new Error(`Failed to create upload URL for artifact '${uploadName}': ${err instanceof Error ? err.message : err}`);
-                    });
-                    return exec_client_exec(requestPromise, { apiUrl, token, log });
-                }
-                if (options?.upload && 'signedUploadUrl' in options.upload) {
-                    request.signedUploadUrl = options.upload.signedUploadUrl;
-                }
-                return exec_client_exec(request, { apiUrl, token, log });
-            },
-            async getSimulator() {
-                const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/simulator`, {
-                    method: 'GET',
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
-                });
-                return readJsonResponse(res, 'GET /simulator');
-            },
-            async attachSimulator(simulator) {
-                let simApiUrl;
-                let simToken;
-                if ('status' in simulator) {
-                    if (!simulator.status.apiUrl) {
-                        throw new Error('Simulator instance not ready: apiUrl is not available');
-                    }
-                    simApiUrl = simulator.status.apiUrl;
-                    simToken = simulator.status.token;
-                }
-                else {
-                    simApiUrl = simulator.apiUrl;
-                    simToken = simulator.token;
-                }
-                const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/simulator`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({ apiUrl: simApiUrl, token: simToken }),
-                });
-                return readJsonResponse(res, 'POST /simulator');
-            },
-        };
-    }
-}
-//# sourceMappingURL=xcode-instances-helpers.mjs.map
-;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/index.mjs
-// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
-
-
-
-
-//# sourceMappingURL=index.mjs.map
-;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/utils/env.mjs
-// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
-/**
- * Read an environment variable.
- *
- * Trims beginning and trailing whitespace.
- *
- * Will return undefined if the environment variable doesn't exist or cannot be accessed.
- */
-const readEnv = (env) => {
-    if (typeof globalThis.process !== 'undefined') {
-        return globalThis.process.env?.[env]?.trim() || undefined;
-    }
-    if (typeof globalThis.Deno !== 'undefined') {
-        return globalThis.Deno.env?.get?.(env)?.trim() || undefined;
-    }
-    return undefined;
-};
-//# sourceMappingURL=env.mjs.map
-;// CONCATENATED MODULE: ./node_modules/@limrun/api/client.mjs
-// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
-var _Limrun_instances, _a, _Limrun_encoder, _Limrun_baseURLOverridden;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * API Client for interfacing with the Limrun API.
- */
-class Limrun {
-    /**
-     * API Client for interfacing with the Limrun API.
-     *
-     * @param {string | null | undefined} [opts.apiKey=process.env['LIM_API_KEY'] ?? null]
-     * @param {string} [opts.baseURL=process.env['LIMRUN_BASE_URL'] ?? https://api.limrun.com] - Override the default base URL for the API.
-     * @param {number} [opts.timeout=5 minutes] - The maximum amount of time (in milliseconds) the client will wait for a response before timing out.
-     * @param {MergedRequestInit} [opts.fetchOptions] - Additional `RequestInit` options to be passed to `fetch` calls.
-     * @param {Fetch} [opts.fetch] - Specify a custom `fetch` function implementation.
-     * @param {number} [opts.maxRetries=2] - The maximum number of times the client will retry a request.
-     * @param {HeadersLike} opts.defaultHeaders - Default headers to include with every request to the API.
-     * @param {Record<string, string | undefined>} opts.defaultQuery - Default query parameters to include with every request to the API.
-     */
-    constructor({ baseURL = readEnv('LIMRUN_BASE_URL'), apiKey = readEnv('LIM_API_KEY') ?? null, ...opts } = {}) {
-        _Limrun_instances.add(this);
-        _Limrun_encoder.set(this, void 0);
-        this.androidInstances = new AndroidInstances(this);
-        this.assets = new Assets(this);
-        this.iosInstances = new IosInstances(this);
-        this.xcodeInstances = new XcodeInstances(this);
-        const options = {
-            apiKey,
-            ...opts,
-            baseURL: baseURL || `https://api.limrun.com`,
-        };
-        this.baseURL = options.baseURL;
-        this.timeout = options.timeout ?? _a.DEFAULT_TIMEOUT /* 5 minutes */;
-        this.logger = options.logger ?? console;
-        const defaultLogLevel = 'warn';
-        // Set default logLevel early so that we can log a warning in parseLogLevel.
-        this.logLevel = defaultLogLevel;
-        this.logLevel =
-            parseLogLevel(options.logLevel, 'ClientOptions.logLevel', this) ??
-                parseLogLevel(readEnv('LIMRUN_LOG'), "process.env['LIMRUN_LOG']", this) ??
-                defaultLogLevel;
-        this.fetchOptions = options.fetchOptions;
-        this.maxRetries = options.maxRetries ?? 2;
-        this.fetch = options.fetch ?? getDefaultFetch();
-        __classPrivateFieldSet(this, _Limrun_encoder, FallbackEncoder, "f");
-        const customHeadersEnv = readEnv('LIMRUN_CUSTOM_HEADERS');
-        if (customHeadersEnv) {
-            const parsed = {};
-            for (const line of customHeadersEnv.split('\n')) {
-                const colon = line.indexOf(':');
-                if (colon >= 0) {
-                    parsed[line.substring(0, colon).trim()] = line.substring(colon + 1).trim();
-                }
-            }
-            options.defaultHeaders = { ...parsed, ...options.defaultHeaders };
-        }
-        this._options = options;
-        this.apiKey = apiKey;
-    }
-    /**
-     * Create a new client instance re-using the same options given to the current client with optional overriding.
-     */
-    withOptions(options) {
-        const client = new this.constructor({
-            ...this._options,
-            baseURL: this.baseURL,
-            maxRetries: this.maxRetries,
-            timeout: this.timeout,
-            logger: this.logger,
-            logLevel: this.logLevel,
-            fetch: this.fetch,
-            fetchOptions: this.fetchOptions,
-            apiKey: this.apiKey,
-            ...options,
-        });
-        return client;
-    }
-    defaultQuery() {
-        return this._options.defaultQuery;
-    }
-    validateHeaders({ values, nulls }) {
-        if (this.apiKey && values.get('authorization')) {
-            return;
-        }
-        if (nulls.has('authorization')) {
-            return;
-        }
-        throw new Error('Could not resolve authentication method. Expected the apiKey to be set. Or for the "Authorization" headers to be explicitly omitted');
-    }
-    async authHeaders(opts) {
-        if (this.apiKey == null) {
-            return undefined;
-        }
-        return buildHeaders([{ Authorization: `Bearer ${this.apiKey}` }]);
-    }
-    /**
-     * Basic re-implementation of `qs.stringify` for primitive types.
-     */
-    stringifyQuery(query) {
-        return stringifyQuery(query);
-    }
-    getUserAgent() {
-        return `${this.constructor.name}/JS ${api_version_VERSION}`;
-    }
-    defaultIdempotencyKey() {
-        return `stainless-node-retry-${uuid4()}`;
-    }
-    makeStatusError(status, error, message, headers) {
-        return APIError.generate(status, error, message, headers);
-    }
-    buildURL(path, query, defaultBaseURL) {
-        const baseURL = (!__classPrivateFieldGet(this, _Limrun_instances, "m", _Limrun_baseURLOverridden).call(this) && defaultBaseURL) || this.baseURL;
-        const url = isAbsoluteURL(path) ?
-            new URL(path)
-            : new URL(baseURL + (baseURL.endsWith('/') && path.startsWith('/') ? path.slice(1) : path));
-        const defaultQuery = this.defaultQuery();
-        const pathQuery = Object.fromEntries(url.searchParams);
-        if (!isEmptyObj(defaultQuery) || !isEmptyObj(pathQuery)) {
-            query = { ...pathQuery, ...defaultQuery, ...query };
-        }
-        if (typeof query === 'object' && query && !Array.isArray(query)) {
-            url.search = this.stringifyQuery(query);
-        }
-        return url.toString();
-    }
-    /**
-     * Used as a callback for mutating the given `FinalRequestOptions` object.
-     */
-    async prepareOptions(options) { }
-    /**
-     * Used as a callback for mutating the given `RequestInit` object.
-     *
-     * This is useful for cases where you want to add certain headers based off of
-     * the request properties, e.g. `method` or `url`.
-     */
-    async prepareRequest(request, { url, options }) { }
-    get(path, opts) {
-        return this.methodRequest('get', path, opts);
-    }
-    post(path, opts) {
-        return this.methodRequest('post', path, opts);
-    }
-    patch(path, opts) {
-        return this.methodRequest('patch', path, opts);
-    }
-    put(path, opts) {
-        return this.methodRequest('put', path, opts);
-    }
-    delete(path, opts) {
-        return this.methodRequest('delete', path, opts);
-    }
-    methodRequest(method, path, opts) {
-        return this.request(Promise.resolve(opts).then((opts) => {
-            return { method, path, ...opts };
-        }));
-    }
-    request(options, remainingRetries = null) {
-        return new APIPromise(this, this.makeRequest(options, remainingRetries, undefined));
-    }
-    async makeRequest(optionsInput, retriesRemaining, retryOfRequestLogID) {
-        const options = await optionsInput;
-        const maxRetries = options.maxRetries ?? this.maxRetries;
-        if (retriesRemaining == null) {
-            retriesRemaining = maxRetries;
-        }
-        await this.prepareOptions(options);
-        const { req, url, timeout } = await this.buildRequest(options, {
-            retryCount: maxRetries - retriesRemaining,
-        });
-        await this.prepareRequest(req, { url, options });
-        /** Not an API request ID, just for correlating local log entries. */
-        const requestLogID = 'log_' + ((Math.random() * (1 << 24)) | 0).toString(16).padStart(6, '0');
-        const retryLogStr = retryOfRequestLogID === undefined ? '' : `, retryOf: ${retryOfRequestLogID}`;
-        const startTime = Date.now();
-        loggerFor(this).debug(`[${requestLogID}] sending request`, formatRequestDetails({
-            retryOfRequestLogID,
-            method: options.method,
-            url,
-            options,
-            headers: req.headers,
-        }));
-        if (options.signal?.aborted) {
-            throw new APIUserAbortError();
-        }
-        const controller = new AbortController();
-        const response = await this.fetchWithTimeout(url, req, timeout, controller).catch(castToError);
-        const headersTime = Date.now();
-        if (response instanceof globalThis.Error) {
-            const retryMessage = `retrying, ${retriesRemaining} attempts remaining`;
-            if (options.signal?.aborted) {
-                throw new APIUserAbortError();
-            }
-            // detect native connection timeout errors
-            // deno throws "TypeError: error sending request for url (https://example/): client error (Connect): tcp connect error: Operation timed out (os error 60): Operation timed out (os error 60)"
-            // undici throws "TypeError: fetch failed" with cause "ConnectTimeoutError: Connect Timeout Error (attempted address: example:443, timeout: 1ms)"
-            // others do not provide enough information to distinguish timeouts from other connection errors
-            const isTimeout = isAbortError(response) ||
-                /timed? ?out/i.test(String(response) + ('cause' in response ? String(response.cause) : ''));
-            if (retriesRemaining) {
-                loggerFor(this).info(`[${requestLogID}] connection ${isTimeout ? 'timed out' : 'failed'} - ${retryMessage}`);
-                loggerFor(this).debug(`[${requestLogID}] connection ${isTimeout ? 'timed out' : 'failed'} (${retryMessage})`, formatRequestDetails({
-                    retryOfRequestLogID,
-                    url,
-                    durationMs: headersTime - startTime,
-                    message: response.message,
-                }));
-                return this.retryRequest(options, retriesRemaining, retryOfRequestLogID ?? requestLogID);
-            }
-            loggerFor(this).info(`[${requestLogID}] connection ${isTimeout ? 'timed out' : 'failed'} - error; no more retries left`);
-            loggerFor(this).debug(`[${requestLogID}] connection ${isTimeout ? 'timed out' : 'failed'} (error; no more retries left)`, formatRequestDetails({
-                retryOfRequestLogID,
-                url,
-                durationMs: headersTime - startTime,
-                message: response.message,
-            }));
-            if (isTimeout) {
-                throw new APIConnectionTimeoutError();
-            }
-            throw new APIConnectionError({ cause: response });
-        }
-        const responseInfo = `[${requestLogID}${retryLogStr}] ${req.method} ${url} ${response.ok ? 'succeeded' : 'failed'} with status ${response.status} in ${headersTime - startTime}ms`;
-        if (!response.ok) {
-            const shouldRetry = await this.shouldRetry(response);
-            if (retriesRemaining && shouldRetry) {
-                const retryMessage = `retrying, ${retriesRemaining} attempts remaining`;
-                // We don't need the body of this response.
-                await CancelReadableStream(response.body);
-                loggerFor(this).info(`${responseInfo} - ${retryMessage}`);
-                loggerFor(this).debug(`[${requestLogID}] response error (${retryMessage})`, formatRequestDetails({
-                    retryOfRequestLogID,
-                    url: response.url,
-                    status: response.status,
-                    headers: response.headers,
-                    durationMs: headersTime - startTime,
-                }));
-                return this.retryRequest(options, retriesRemaining, retryOfRequestLogID ?? requestLogID, response.headers);
-            }
-            const retryMessage = shouldRetry ? `error; no more retries left` : `error; not retryable`;
-            loggerFor(this).info(`${responseInfo} - ${retryMessage}`);
-            const errText = await response.text().catch((err) => castToError(err).message);
-            const errJSON = safeJSON(errText);
-            const errMessage = errJSON ? undefined : errText;
-            loggerFor(this).debug(`[${requestLogID}] response error (${retryMessage})`, formatRequestDetails({
-                retryOfRequestLogID,
-                url: response.url,
-                status: response.status,
-                headers: response.headers,
-                message: errMessage,
-                durationMs: Date.now() - startTime,
-            }));
-            const err = this.makeStatusError(response.status, errJSON, errMessage, response.headers);
-            throw err;
-        }
-        loggerFor(this).info(responseInfo);
-        loggerFor(this).debug(`[${requestLogID}] response start`, formatRequestDetails({
-            retryOfRequestLogID,
-            url: response.url,
-            status: response.status,
-            headers: response.headers,
-            durationMs: headersTime - startTime,
-        }));
-        return { response, options, controller, requestLogID, retryOfRequestLogID, startTime };
-    }
-    getAPIList(path, Page, opts) {
-        return this.requestAPIList(Page, opts && 'then' in opts ?
-            opts.then((opts) => ({ method: 'get', path, ...opts }))
-            : { method: 'get', path, ...opts });
-    }
-    requestAPIList(Page, options) {
-        const request = this.makeRequest(options, null, undefined);
-        return new PagePromise(this, request, Page);
-    }
-    async fetchWithTimeout(url, init, ms, controller) {
-        const { signal, method, ...options } = init || {};
-        const abort = this._makeAbort(controller);
-        if (signal)
-            signal.addEventListener('abort', abort, { once: true });
-        const timeout = setTimeout(abort, ms);
-        const isReadableBody = (globalThis.ReadableStream && options.body instanceof globalThis.ReadableStream) ||
-            (typeof options.body === 'object' && options.body !== null && Symbol.asyncIterator in options.body);
-        const fetchOptions = {
-            signal: controller.signal,
-            ...(isReadableBody ? { duplex: 'half' } : {}),
-            method: 'GET',
-            ...options,
-        };
-        if (method) {
-            // Custom methods like 'patch' need to be uppercased
-            // See https://github.com/nodejs/undici/issues/2294
-            fetchOptions.method = method.toUpperCase();
-        }
-        try {
-            // use undefined this binding; fetch errors if bound to something else in browser/cloudflare
-            return await this.fetch.call(undefined, url, fetchOptions);
-        }
-        finally {
-            clearTimeout(timeout);
-        }
-    }
-    async shouldRetry(response) {
-        // Note this is not a standard header.
-        const shouldRetryHeader = response.headers.get('x-should-retry');
-        // If the server explicitly says whether or not to retry, obey.
-        if (shouldRetryHeader === 'true')
-            return true;
-        if (shouldRetryHeader === 'false')
-            return false;
-        // Retry on request timeouts.
-        if (response.status === 408)
-            return true;
-        // Retry on lock timeouts.
-        if (response.status === 409)
-            return true;
-        // Retry on rate limits.
-        if (response.status === 429)
-            return true;
-        // Retry internal errors.
-        if (response.status >= 500)
-            return true;
-        return false;
-    }
-    async retryRequest(options, retriesRemaining, requestLogID, responseHeaders) {
-        let timeoutMillis;
-        // Note the `retry-after-ms` header may not be standard, but is a good idea and we'd like proactive support for it.
-        const retryAfterMillisHeader = responseHeaders?.get('retry-after-ms');
-        if (retryAfterMillisHeader) {
-            const timeoutMs = parseFloat(retryAfterMillisHeader);
-            if (!Number.isNaN(timeoutMs)) {
-                timeoutMillis = timeoutMs;
-            }
-        }
-        // About the Retry-After header: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Retry-After
-        const retryAfterHeader = responseHeaders?.get('retry-after');
-        if (retryAfterHeader && !timeoutMillis) {
-            const timeoutSeconds = parseFloat(retryAfterHeader);
-            if (!Number.isNaN(timeoutSeconds)) {
-                timeoutMillis = timeoutSeconds * 1000;
-            }
-            else {
-                timeoutMillis = Date.parse(retryAfterHeader) - Date.now();
-            }
-        }
-        // If the API asks us to wait a certain amount of time, just do what it
-        // says, but otherwise calculate a default
-        if (timeoutMillis === undefined) {
-            const maxRetries = options.maxRetries ?? this.maxRetries;
-            timeoutMillis = this.calculateDefaultRetryTimeoutMillis(retriesRemaining, maxRetries);
-        }
-        await sleep(timeoutMillis);
-        return this.makeRequest(options, retriesRemaining - 1, requestLogID);
-    }
-    calculateDefaultRetryTimeoutMillis(retriesRemaining, maxRetries) {
-        const initialRetryDelay = 0.5;
-        const maxRetryDelay = 8.0;
-        const numRetries = maxRetries - retriesRemaining;
-        // Apply exponential backoff, but not more than the max.
-        const sleepSeconds = Math.min(initialRetryDelay * Math.pow(2, numRetries), maxRetryDelay);
-        // Apply some jitter, take up to at most 25 percent of the retry time.
-        const jitter = 1 - Math.random() * 0.25;
-        return sleepSeconds * jitter * 1000;
-    }
-    async buildRequest(inputOptions, { retryCount = 0 } = {}) {
-        const options = { ...inputOptions };
-        const { method, path, query, defaultBaseURL } = options;
-        const url = this.buildURL(path, query, defaultBaseURL);
-        if ('timeout' in options)
-            validatePositiveInteger('timeout', options.timeout);
-        options.timeout = options.timeout ?? this.timeout;
-        const { bodyHeaders, body } = this.buildBody({ options });
-        const reqHeaders = await this.buildHeaders({ options: inputOptions, method, bodyHeaders, retryCount });
-        const req = {
-            method,
-            headers: reqHeaders,
-            ...(options.signal && { signal: options.signal }),
-            ...(globalThis.ReadableStream &&
-                body instanceof globalThis.ReadableStream && { duplex: 'half' }),
-            ...(body && { body }),
-            ...(this.fetchOptions ?? {}),
-            ...(options.fetchOptions ?? {}),
-        };
-        return { req, url, timeout: options.timeout };
-    }
-    async buildHeaders({ options, method, bodyHeaders, retryCount, }) {
-        let idempotencyHeaders = {};
-        if (this.idempotencyHeader && method !== 'get') {
-            if (!options.idempotencyKey)
-                options.idempotencyKey = this.defaultIdempotencyKey();
-            idempotencyHeaders[this.idempotencyHeader] = options.idempotencyKey;
-        }
-        const headers = buildHeaders([
-            idempotencyHeaders,
-            {
-                Accept: 'application/json',
-                'User-Agent': this.getUserAgent(),
-                'X-Stainless-Retry-Count': String(retryCount),
-                ...(options.timeout ? { 'X-Stainless-Timeout': String(Math.trunc(options.timeout / 1000)) } : {}),
-                ...getPlatformHeaders(),
-            },
-            await this.authHeaders(options),
-            this._options.defaultHeaders,
-            bodyHeaders,
-            options.headers,
-        ]);
-        this.validateHeaders(headers);
-        return headers.values;
-    }
-    _makeAbort(controller) {
-        // note: we can't just inline this method inside `fetchWithTimeout()` because then the closure
-        //       would capture all request options, and cause a memory leak.
-        return () => controller.abort();
-    }
-    buildBody({ options: { body, headers: rawHeaders } }) {
-        if (!body) {
-            return { bodyHeaders: undefined, body: undefined };
-        }
-        const headers = buildHeaders([rawHeaders]);
-        if (
-        // Pass raw type verbatim
-        ArrayBuffer.isView(body) ||
-            body instanceof ArrayBuffer ||
-            body instanceof DataView ||
-            (typeof body === 'string' &&
-                // Preserve legacy string encoding behavior for now
-                headers.values.has('content-type')) ||
-            // `Blob` is superset of `File`
-            (globalThis.Blob && body instanceof globalThis.Blob) ||
-            // `FormData` -> `multipart/form-data`
-            body instanceof FormData ||
-            // `URLSearchParams` -> `application/x-www-form-urlencoded`
-            body instanceof URLSearchParams ||
-            // Send chunked stream (each chunk has own `length`)
-            (globalThis.ReadableStream && body instanceof globalThis.ReadableStream)) {
-            return { bodyHeaders: undefined, body: body };
-        }
-        else if (typeof body === 'object' &&
-            (Symbol.asyncIterator in body ||
-                (Symbol.iterator in body && 'next' in body && typeof body.next === 'function'))) {
-            return { bodyHeaders: undefined, body: shims_ReadableStreamFrom(body) };
-        }
-        else if (typeof body === 'object' &&
-            headers.values.get('content-type') === 'application/x-www-form-urlencoded') {
-            return {
-                bodyHeaders: { 'content-type': 'application/x-www-form-urlencoded' },
-                body: this.stringifyQuery(body),
-            };
-        }
-        else {
-            return __classPrivateFieldGet(this, _Limrun_encoder, "f").call(this, { body, headers });
-        }
-    }
-}
-_a = Limrun, _Limrun_encoder = new WeakMap(), _Limrun_instances = new WeakSet(), _Limrun_baseURLOverridden = function _Limrun_baseURLOverridden() {
-    return this.baseURL !== 'https://api.limrun.com';
-};
-Limrun.Limrun = _a;
-Limrun.DEFAULT_TIMEOUT = 300000; // 5 minutes
-Limrun.LimrunError = error_LimrunError;
-Limrun.APIError = APIError;
-Limrun.APIConnectionError = APIConnectionError;
-Limrun.APIConnectionTimeoutError = APIConnectionTimeoutError;
-Limrun.APIUserAbortError = APIUserAbortError;
-Limrun.NotFoundError = NotFoundError;
-Limrun.ConflictError = ConflictError;
-Limrun.RateLimitError = RateLimitError;
-Limrun.BadRequestError = BadRequestError;
-Limrun.AuthenticationError = AuthenticationError;
-Limrun.InternalServerError = InternalServerError;
-Limrun.PermissionDeniedError = PermissionDeniedError;
-Limrun.UnprocessableEntityError = UnprocessableEntityError;
-Limrun.toFile = toFile;
-Limrun.AndroidInstances = AndroidInstances;
-Limrun.Assets = Assets;
-Limrun.IosInstances = IosInstances;
-Limrun.XcodeInstances = XcodeInstances;
-//# sourceMappingURL=client.mjs.map
+// EXTERNAL MODULE: external "net"
+var external_net_ = __nccwpck_require__(9278);
 // EXTERNAL MODULE: ./node_modules/ws/lib/stream.js
 var stream = __nccwpck_require__(1650);
 // EXTERNAL MODULE: ./node_modules/ws/lib/extension.js
@@ -84299,44 +85022,6 @@ var websocket_server = __nccwpck_require__(129);
 
 /* harmony default export */ const wrapper = ((/* unused pure expression or super */ null && (WebSocket)));
 
-;// CONCATENATED MODULE: external "node:child_process"
-const external_node_child_process_namespaceObject = require("node:child_process");
-;// CONCATENATED MODULE: external "stream/promises"
-const promises_namespaceObject = require("stream/promises");
-;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/download-file.mjs
-
-
-
-
-
-async function download_file_downloadFileToLocalPath(url, token, localPath) {
-    const maxRetries = 3;
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        const response = await nodeProxyTransport.fetch(url, {
-            method: 'GET',
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        });
-        if (!response.ok) {
-            const errorBody = await response.text();
-            const isRetriable = response.status >= 500 && response.status < 600;
-            if (isRetriable && attempt < maxRetries) {
-                continue;
-            }
-            throw new Error(`Download failed: ${response.status} ${errorBody}`);
-        }
-        if (!response.body) {
-            throw new Error('Download failed: response body is missing');
-        }
-        await fs.promises.mkdir(path.dirname(localPath), { recursive: true });
-        await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(localPath));
-        return;
-    }
-}
-//# sourceMappingURL=download-file.mjs.map
-// EXTERNAL MODULE: external "net"
-var external_net_ = __nccwpck_require__(9278);
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/tunnel.mjs
 
 
@@ -84747,7 +85432,7 @@ async function startSingletonTcpTunnel(remoteURL, token, hostname, port, options
         },
     };
     return new Promise((resolve, reject) => {
-        const server = net.createServer();
+        const server = external_net_.createServer();
         let ws;
         let pingInterval;
         let reconnectTimeout;
@@ -84783,7 +85468,7 @@ async function startSingletonTcpTunnel(remoteURL, token, hostname, port, options
             }
             if (ws) {
                 ws.removeAllListeners();
-                if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+                if (ws.readyState === websocket.OPEN || ws.readyState === websocket.CONNECTING) {
                     ws.close(1000, 'close');
                 }
                 ws = undefined;
@@ -84839,8 +85524,8 @@ async function startSingletonTcpTunnel(remoteURL, token, hostname, port, options
             if (sessionId) {
                 url.searchParams.set('sessionId', sessionId);
             }
-            const proxyAgent = nodeProxyTransport.getWebSocketAgent(url.toString());
-            ws = new WebSocket(url.toString(), {
+            const proxyAgent = proxy_transport_nodeProxyTransport.getWebSocketAgent(url.toString());
+            ws = new websocket(url.toString(), {
                 headers: { Authorization: `Bearer ${token}` },
                 ...(proxyAgent ? { agent: proxyAgent } : {}),
                 perMessageDeflate: false,
@@ -84882,7 +85567,7 @@ async function startSingletonTcpTunnel(remoteURL, token, hostname, port, options
                 lastError = undefined;
                 updateConnectionState('connected');
                 pingInterval = setInterval(() => {
-                    if (socket.readyState === WebSocket.OPEN) {
+                    if (socket.readyState === websocket.OPEN) {
                         socket.ping();
                     }
                 }, 30000);
@@ -84893,7 +85578,7 @@ async function startSingletonTcpTunnel(remoteURL, token, hostname, port, options
                 }
                 // TCP → WS: Forward data directly
                 const onTcpData = (chunk) => {
-                    if (socket.readyState === WebSocket.OPEN) {
+                    if (socket.readyState === websocket.OPEN) {
                         socket.send(chunk);
                     }
                     // If WebSocket is not ready, data will queue in TCP buffers (backpressure)
@@ -84963,7 +85648,7 @@ async function startSingletonTcpTunnel(remoteURL, token, hostname, port, options
             // Generate a new sessionId for this TCP connection.
             // This ID persists across WebSocket reconnects, allowing the server
             // to associate reconnecting clients with their existing ADB session.
-            sessionId = crypto.randomUUID();
+            sessionId = external_crypto_.randomUUID();
             logger.debug('TCP client connected', 'sessionId', sessionId);
             tcpSocket = socket;
             // TCP socket handlers
@@ -85013,7 +85698,7 @@ async function startMultiplexedTcpTunnel(remoteURL, token, hostname, port, optio
         },
     };
     return new Promise((resolve, reject) => {
-        const server = net.createServer();
+        const server = external_net_.createServer();
         // Map of connection ID to TCP socket
         const connections = new Map();
         // Counter for generating unique connection IDs
@@ -85021,7 +85706,17 @@ async function startMultiplexedTcpTunnel(remoteURL, token, hostname, port, optio
         let ws;
         let pingInterval;
         let intentionalDisconnect = false;
+        // True once the initial connect has succeeded. Initial-connect failures
+        // reject the outer promise (no reconnect); only post-establishment drops
+        // reconnect, keeping the local listener open so long builds survive a blip.
+        let established = false;
         let connectionState = 'connecting';
+        const maxReconnectAttempts = options?.maxReconnectAttempts ?? 6;
+        const reconnectDelay = options?.reconnectDelay ?? 1000;
+        const maxReconnectDelay = options?.maxReconnectDelay ?? 30000;
+        let reconnectAttempts = 0;
+        let reconnectTimeout;
+        let lastError;
         const stateChangeCallbacks = new Set();
         const updateConnectionState = (newState) => {
             if (connectionState !== newState) {
@@ -85044,7 +85739,7 @@ async function startMultiplexedTcpTunnel(remoteURL, token, hostname, port, optio
             }
             if (ws) {
                 ws.removeAllListeners();
-                if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+                if (ws.readyState === websocket.OPEN || ws.readyState === websocket.CONNECTING) {
                     ws.close(1000, 'close');
                 }
                 ws = undefined;
@@ -85061,6 +85756,10 @@ async function startMultiplexedTcpTunnel(remoteURL, token, hostname, port, optio
         };
         const close = () => {
             intentionalDisconnect = true;
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = undefined;
+            }
             cleanupWebSocket();
             closeAllConnections();
             updateConnectionState('disconnected');
@@ -85068,9 +85767,39 @@ async function startMultiplexedTcpTunnel(remoteURL, token, hostname, port, optio
                 server.close();
             }
         };
+        // Single reconnect scheduler. Only ws.on('close') drives it (after the
+        // tunnel is established), so there is no double-scheduling race; the
+        // `reconnectTimeout` guard is belt-and-suspenders. Mirrors the singleton
+        // tunnel's backoff, but tears down per-connection streams on each drop
+        // since a multiplexed connId cannot be resumed across a WS reconnect.
+        const scheduleReconnect = () => {
+            if (intentionalDisconnect || reconnectTimeout) {
+                return;
+            }
+            if (tunnel_isNonRetryableError(lastError ?? '')) {
+                logger.error(`Closing multiplexed tunnel (non-retryable error): ${lastError}`);
+                close();
+                return;
+            }
+            if (reconnectAttempts >= maxReconnectAttempts) {
+                logger.error(`Max reconnection attempts (${maxReconnectAttempts}) reached. Closing tunnel.`);
+                close();
+                return;
+            }
+            const currentDelay = Math.min(reconnectDelay * Math.pow(2, reconnectAttempts), maxReconnectDelay);
+            reconnectAttempts++;
+            updateConnectionState('reconnecting');
+            logger.debug(`Scheduling reconnection attempt ${reconnectAttempts} in ${currentDelay}ms...`);
+            reconnectTimeout = setTimeout(() => {
+                reconnectTimeout = undefined;
+                // On failure the new ws's own 'close' handler schedules the next
+                // attempt, so here we only swallow the rejection.
+                setupWebSocket().catch(() => { });
+            }, currentDelay);
+        };
         // Send close signal for a connection (header-only packet)
         const sendCloseSignal = (connId) => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
+            if (ws && ws.readyState === websocket.OPEN) {
                 const header = encodeConnectionHeader(connId);
                 ws.send(header);
                 logger.debug(`Sent close signal for connection ${connId}`);
@@ -85095,14 +85824,15 @@ async function startMultiplexedTcpTunnel(remoteURL, token, hostname, port, optio
                 const url = new URL(remoteURL);
                 url.searchParams.set('mode', 'multiplexed');
                 logger.debug(`Connecting WebSocket to: ${url.toString()}`);
-                const proxyAgent = nodeProxyTransport.getWebSocketAgent(url.toString());
-                ws = new WebSocket(url.toString(), {
+                const proxyAgent = proxy_transport_nodeProxyTransport.getWebSocketAgent(url.toString());
+                ws = new websocket(url.toString(), {
                     headers: { Authorization: `Bearer ${token}` },
                     ...(proxyAgent ? { agent: proxyAgent } : {}),
                     perMessageDeflate: false,
                 });
                 ws.on('error', (err) => {
                     const errMessage = err.message || String(err);
+                    lastError = errMessage;
                     logger.error('WebSocket error:', errMessage, err.code || '');
                     rejectWs(err);
                 });
@@ -85111,17 +85841,28 @@ async function startMultiplexedTcpTunnel(remoteURL, token, hostname, port, optio
                         clearInterval(pingInterval);
                         pingInterval = undefined;
                     }
-                    updateConnectionState('disconnected');
                     logger.debug(`WebSocket disconnected (code=${code}, reason=${reason.toString()})`);
-                    // Close all TCP connections when WebSocket closes
+                    // Per-connection streams cannot survive a WS drop (their remote peers
+                    // are gone), so tear them down; bazel's own gRPC retries re-establish
+                    // channels once the WS is back.
                     closeAllConnections();
+                    // Before establishment, the listening handler's catch rejects + closes
+                    // (no reconnect). After establishment, a non-intentional drop reconnects
+                    // (keeping the listener open) instead of killing the tunnel.
+                    if (!established || intentionalDisconnect) {
+                        updateConnectionState('disconnected');
+                        return;
+                    }
+                    scheduleReconnect();
                 });
                 ws.on('open', () => {
                     const socket = ws;
                     logger.debug('WebSocket connected');
+                    reconnectAttempts = 0;
+                    lastError = undefined;
                     updateConnectionState('connected');
                     pingInterval = setInterval(() => {
-                        if (socket.readyState === WebSocket.OPEN) {
+                        if (socket.readyState === websocket.OPEN) {
                             socket.ping();
                         }
                     }, 30000);
@@ -85183,6 +85924,7 @@ async function startMultiplexedTcpTunnel(remoteURL, token, hostname, port, optio
             // Start WebSocket connection and wait for it to be ready
             try {
                 await setupWebSocket();
+                established = true;
                 logger.debug('WebSocket ready, tunnel fully initialized');
                 resolve({
                     address,
@@ -85198,6 +85940,17 @@ async function startMultiplexedTcpTunnel(remoteURL, token, hostname, port, optio
         });
         // On TCP connection - allow multiple connections in multiplexed mode
         server.on('connection', (socket) => {
+            // Until the upstream WS is OPEN there is no channel to carry this
+            // connection: either it hasn't connected yet (the listener is up before
+            // setupWebSocket resolves) or it dropped mid-build and is reconnecting.
+            // Accepting it and dropping its bytes builds TCP backpressure that
+            // surfaces to bazel as an opaque ECONNRESET wall; refuse it cleanly so
+            // bazel's gRPC retries instead and succeed once the WS is up. (A real
+            // build connects after the endpoint is advertised, i.e. post-establish.)
+            if (!ws || ws.readyState !== websocket.OPEN) {
+                socket.destroy();
+                return;
+            }
             // Assign a unique connection ID
             const connId = nextConnId++;
             // Wrap around at 32-bit max to stay within uint32 range
@@ -85208,7 +85961,7 @@ async function startMultiplexedTcpTunnel(remoteURL, token, hostname, port, optio
             logger.debug(`New TCP connection ${connId} from ${socket.remoteAddress}:${socket.remotePort}, WS state=${ws?.readyState}, total connections=${connections.size}`);
             // TCP → WS: Forward data with connection ID header
             socket.on('data', (chunk) => {
-                if (ws && ws.readyState === WebSocket.OPEN) {
+                if (ws && ws.readyState === websocket.OPEN) {
                     const header = encodeConnectionHeader(connId);
                     const framed = Buffer.concat([header, chunk]);
                     logger.debug(`TCP→WS [conn=${connId}] ${chunk.length} bytes: ${chunk
@@ -85222,9 +85975,13 @@ async function startMultiplexedTcpTunnel(remoteURL, token, hostname, port, optio
                     });
                 }
                 else {
-                    logger.debug(`TCP→WS [conn=${connId}] WS not open (state=${ws?.readyState}), dropping ${chunk.length} bytes`);
+                    // The WS dropped mid-stream: close this connection cleanly instead of
+                    // silently buffering bytes that can never be delivered (the remote gRPC
+                    // peer is gone), so bazel sees a retryable disconnect rather than stalled
+                    // backpressure that eventually resets with an opaque error.
+                    logger.debug(`TCP→WS [conn=${connId}] WS not open (state=${ws?.readyState}), closing connection`);
+                    socket.destroy();
                 }
-                // If WebSocket is not ready, data will queue in TCP buffers (backpressure)
             });
             socket.on('close', () => {
                 logger.debug(`TCP connection ${connId} closed by client`);
@@ -85272,6 +86029,1129 @@ function decodeConnectionHeader(header) {
     return header.readUInt32BE(0);
 }
 //# sourceMappingURL=tunnel.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/rbe-session.mjs
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Matches the transient gateway / dropped-connection errors that occur right
+ * after an instance is created, when its proxy path is not fully serving yet.
+ *
+ * The HTTP part anchors on the exact `failed: <code>` shape `directInstanceHttpError`
+ * produces (`${operation} failed: ${status}...`), so a bare 502/503/504 buried in
+ * a response body or an instance id does NOT count as transient. Fetch-thrown
+ * network errors carry their own names and are matched directly. A 404 never
+ * reaches here; `readRbeResponse` maps it to RbeUnsupportedError first.
+ */
+const TRANSIENT = /failed: (?:502|503|504)\b|\bEOF\b|ECONNRESET|ECONNREFUSED|socket hang up|fetch failed/i;
+function isTransientError(err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return TRANSIENT.test(message);
+}
+/**
+ * Retries `fn` on transient gateway errors (or on whatever `retryOn` matches
+ * when given). Non-matching errors propagate immediately. After exhausting
+ * `attempts`, throws the last error.
+ */
+async function retryTransient(fn, opts = {}) {
+    const sleep = opts.sleep ?? defaultSleep;
+    const attempts = opts.attempts ?? 5;
+    const retryOn = opts.retryOn ?? isTransientError;
+    let lastErr;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+            return await fn();
+        }
+        catch (err) {
+            if (!retryOn(err)) {
+                throw err;
+            }
+            lastErr = err;
+            if (attempt < attempts) {
+                const message = err instanceof Error ? err.message : String(err);
+                opts.log?.(`Retrying after error (${message.trim()})...`);
+                await sleep(2000 * attempt);
+            }
+        }
+    }
+    throw lastErr;
+}
+/**
+ * Polls `getRbe` until the stack is `running` (with a usable frontend port and
+ * Xcode version), starting from the `initial` status returned by `startRbe`.
+ * Each poll is wrapped in retryTransient so a transient blip mid-startup does
+ * not abort. Throws when the stack ends in `failed`, stays `starting` past
+ * `maxAttempts`, or reports `running` without the fields the caller needs.
+ */
+async function waitForRbeRunning(client, initial, opts = {}) {
+    const sleep = opts.sleep ?? defaultSleep;
+    const maxAttempts = opts.maxAttempts ?? 15;
+    let status = initial;
+    for (let attempt = 0; status.state === 'starting' && attempt < maxAttempts; attempt++) {
+        await sleep(2000);
+        status = await retryTransient(() => client.getRbe(), { sleep });
+    }
+    if (status.state !== 'running' || !status.frontendPort || !status.xcodeVersion) {
+        throw new Error(`Remote-execution stack failed to start: ${status.error ?? `state is ${status.state}`}`);
+    }
+    return status;
+}
+//# sourceMappingURL=rbe-session.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/sse-fetch.mjs
+/**
+ * Wraps a fetch for use with eventsource-client, which swallows a REJECTED
+ * fetch (connection refused, instance gone) into a silent reconnect loop
+ * without ever calling onDisconnect. The wrapper reports the rejection so the
+ * caller can settle its promise instead of hanging while the client
+ * reconnect-loops. exec-client has the same latent hazard and should adopt
+ * this when touched next.
+ */
+function sseFetch(fetchImpl, onRejected) {
+    return async (input, init) => {
+        try {
+            return await fetchImpl(input, init);
+        }
+        catch (err) {
+            onRejected(err);
+            throw err;
+        }
+    };
+}
+//# sourceMappingURL=sse-fetch.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/xcode-instances-helpers.mjs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/** Default local TCP port the RBE tunnel listens on. */
+const DEFAULT_RBE_TUNNEL_PORT = 8980;
+function xcode_instances_helpers_createLogger(logLevel) {
+    const shouldLog = (level) => {
+        const levels = ['none', 'error', 'warn', 'info', 'debug'];
+        return levels.indexOf(logLevel) >= levels.indexOf(level);
+    };
+    return (level, msg) => {
+        if (!shouldLog(level))
+            return;
+        const prefix = '[XcodeInstance]';
+        if (level === 'error' || level === 'warn') {
+            console[level](prefix, msg);
+        }
+        else {
+            console.log(prefix, msg);
+        }
+    };
+}
+function normalizeWorkspaceRelativePath(remotePath) {
+    if (remotePath === '' ||
+        remotePath.startsWith('/') ||
+        remotePath.includes('\\') ||
+        remotePath.includes('\0')) {
+        throw new Error(`invalid sandbox home path from server: ${remotePath}`);
+    }
+    const parts = remotePath.split('/');
+    if (parts.some((part) => part === '' || part === '.' || part === '..')) {
+        throw new Error(`invalid sandbox home path from server: ${remotePath}`);
+    }
+    return parts.join('/');
+}
+async function fetchSandboxInfo(apiUrl, token) {
+    const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/info`, {
+        method: 'GET',
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+    const body = await readJsonResponse(res, 'GET /info');
+    if (!body.homeDir) {
+        throw new Error('GET /info response is missing homeDir');
+    }
+    return {
+        homeDir: normalizeWorkspaceRelativePath(body.homeDir),
+    };
+}
+/**
+ * Derives the websocket URL of limbuild's /rbe/tunnel endpoint from the
+ * instance apiUrl, mirroring deriveReverseTunnelUrl in ios-client.ts.
+ */
+function deriveRbeTunnelUrl(apiUrl) {
+    const url = new URL(apiUrl);
+    if (url.protocol === 'https:') {
+        url.protocol = 'wss:';
+    }
+    else if (url.protocol === 'http:') {
+        url.protocol = 'ws:';
+    }
+    else {
+        throw new Error(`Unsupported apiUrl protocol for rbe tunnel: ${url.protocol}`);
+    }
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/rbe/tunnel`;
+    url.search = '';
+    url.hash = '';
+    // The tunnel layer (startMultiplexedTcpTunnel) appends mode=multiplexed to
+    // the URL itself, so we don't set it here.
+    return url.toString();
+}
+/**
+ * Raised when an `/rbe` request returns 404. limbuild's `/rbe` routes only
+ * exist on builds with remote-execution support, so a 404 there means RBE is
+ * unavailable on this instance (an older limbuild, or the wrong environment) —
+ * NOT that the instance is missing. Kept distinct from NotFoundError so the CLI
+ * does not mistake it for a vanished instance and spin up replacements.
+ */
+class RbeUnsupportedError extends error_LimrunError {
+    constructor(operation) {
+        super(`Remote build execution is not available on this Xcode instance (${operation} returned 404). ` +
+            'Its limbuild may predate RBE support, or you may be targeting the wrong environment ' +
+            '(for example production instead of staging).');
+        this.name = 'RbeUnsupportedError';
+    }
+}
+/**
+ * Reads an `/rbe` JSON response, mapping a 404 to RbeUnsupportedError (a route
+ * 404 means RBE is not supported here, never a missing instance).
+ */
+async function readRbeResponse(res, operation) {
+    if (res.status === 404) {
+        await res.text().catch(() => undefined);
+        throw new RbeUnsupportedError(operation);
+    }
+    return readJsonResponse(res, operation);
+}
+async function readJsonResponse(res, operation) {
+    const text = await res.text();
+    if (!res.ok) {
+        throw directInstanceHttpError(operation, res.status, text, res.headers);
+    }
+    if (!text.trim()) {
+        throw new Error(`${operation} returned an empty response`);
+    }
+    return JSON.parse(text);
+}
+/**
+ * Mints presigned upload/download URLs for a named asset via assets.getOrCreate,
+ * wrapping failures with the asset name (and the original error as cause).
+ * Shared by the xcodebuild `--upload` path and `uploadLatestRbeBuild`.
+ */
+function mintAssetUploadUrls(assets, name, ttl) {
+    return assets.getOrCreate({ name, ...(ttl && { ttl }) }).catch((err) => {
+        const message = `Failed to create upload URL for asset '${name}': ${err instanceof Error ? err.message : err}`;
+        // @ts-ignore - not all envs have native support for cause yet
+        throw new Error(message, { cause: err });
+    });
+}
+class XcodeInstances extends xcode_instances_XcodeInstances {
+    async createClient(params) {
+        let apiUrl;
+        let token;
+        if ('instance' in params) {
+            if (!params.instance.status.apiUrl) {
+                throw new Error('Instance not ready: apiUrl is not available');
+            }
+            apiUrl = params.instance.status.apiUrl;
+            token = params.instance.status.token;
+        }
+        else {
+            apiUrl = params.apiUrl;
+            token = params.token;
+        }
+        const log = xcode_instances_helpers_createLogger(params.logLevel ?? 'info');
+        const client = this._client;
+        let sandboxInfoPromise;
+        const getSandboxInfo = () => {
+            sandboxInfoPromise ?? (sandboxInfoPromise = fetchSandboxInfo(apiUrl, token));
+            return sandboxInfoPromise;
+        };
+        // Shared local closures. The methods below live in an object literal over
+        // these closures (not `this`), so anything reused across methods is defined
+        // here once and called from each method.
+        const attachSimulatorImpl = async (simulator) => {
+            let simApiUrl;
+            let simToken;
+            if ('status' in simulator) {
+                if (!simulator.status.apiUrl) {
+                    throw new Error('Simulator instance not ready: apiUrl is not available');
+                }
+                simApiUrl = simulator.status.apiUrl;
+                simToken = simulator.status.token;
+            }
+            else {
+                simApiUrl = simulator.apiUrl;
+                simToken = simulator.token;
+            }
+            const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/simulator`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({ apiUrl: simApiUrl, token: simToken }),
+            });
+            return readJsonResponse(res, 'POST /simulator');
+        };
+        const deleteSimulatorImpl = async (iosInstanceId) => {
+            try {
+                await client.iosInstances.delete(iosInstanceId);
+                return true;
+            }
+            catch {
+                return false;
+            }
+        };
+        const attachNewSimulatorImpl = async () => {
+            const simulator = await client.iosInstances.create({ wait: true });
+            // The sim exists from here; if attach fails, delete it so we never leak an
+            // orphan the caller can't reap.
+            try {
+                await attachSimulatorImpl(simulator);
+            }
+            catch (err) {
+                await deleteSimulatorImpl(simulator.metadata.id);
+                throw err;
+            }
+            return { iosInstanceId: simulator.metadata.id, simulator };
+        };
+        return {
+            async sync(localCodePath, opts) {
+                const resolvedPath = external_path_.resolve(localCodePath);
+                const folderName = external_path_.basename(resolvedPath);
+                const hash = external_crypto_.createHash('sha1').update(resolvedPath).digest('hex').slice(0, 8);
+                const cacheKey = `limsync-cache-${folderName}-${hash}`;
+                const basisCacheDir = opts?.basisCacheDir ?? external_path_.join(external_os_namespaceObject.tmpdir(), cacheKey);
+                const sandboxInfo = opts?.additionalFiles && opts.additionalFiles.length > 0 ? await getSandboxInfo() : undefined;
+                const additionalFiles = opts?.additionalFiles?.map((file) => ({
+                    localPath: file.localPath,
+                    remotePath: sandboxInfo && file.remotePath.startsWith('~/') ?
+                        `${sandboxInfo.homeDir}/${file.remotePath.slice(2)}`
+                        : file.remotePath,
+                }));
+                const codeSyncOpts = {
+                    apiUrl,
+                    token,
+                    udid: cacheKey,
+                    install: opts?.install ?? true,
+                    ignoreFn: await folder_sync_ignore_createIgnoreFn(localCodePath, {
+                        basisCacheDir,
+                        log,
+                        additional: (relativePath) => {
+                            if (relativePath.startsWith('build/') ||
+                                relativePath.startsWith('.build/') ||
+                                relativePath.startsWith('DerivedData/') ||
+                                relativePath.startsWith('Index.noindex/') ||
+                                relativePath.startsWith('ModuleCache.noindex/') ||
+                                relativePath.startsWith('.index-build/')) {
+                                return true;
+                            }
+                            if (relativePath.startsWith('.swiftpm/') ||
+                                relativePath.startsWith('Pods/') ||
+                                relativePath.startsWith('Carthage/Build/')) {
+                                return true;
+                            }
+                            if (relativePath.includes('/xcuserdata/')) {
+                                return true;
+                            }
+                            if (relativePath.includes('.dSYM/')) {
+                                return true;
+                            }
+                            if (opts?.ignore?.(relativePath)) {
+                                return true;
+                            }
+                            return false;
+                        },
+                    }),
+                    basisCacheDir,
+                    watch: opts?.watch ?? true,
+                    maxPatchBytes: opts?.maxPatchBytes ?? 4 * 1024 * 1024,
+                    launchMode: 'ForegroundIfRunning',
+                    log,
+                    ...(additionalFiles ? { additionalFiles } : {}),
+                };
+                const result = await folder_sync_syncFolder(localCodePath, codeSyncOpts);
+                if (result.stopWatching) {
+                    return { stopWatching: result.stopWatching };
+                }
+                return {};
+            },
+            xcodebuild(settings, options) {
+                if (options?.reactNative?.devServerURL && settings?.configuration === 'Release') {
+                    throw new Error('reactNative.devServerURL is only supported for Debug builds');
+                }
+                if (options?.buildSettings) {
+                    validateBuildSettings(options.buildSettings);
+                }
+                const request = {
+                    command: 'xcodebuild',
+                    ...(settings && { xcodebuild: settings }),
+                    ...(options?.reactNative && { reactNative: options.reactNative }),
+                    ...(options?.signing && { signing: options.signing }),
+                    ...(options?.buildSettings && { buildSettings: options.buildSettings }),
+                };
+                if (options?.upload && 'assetName' in options.upload) {
+                    const requestPromise = mintAssetUploadUrls(client.assets, options.upload.assetName).then((asset) => {
+                        request.signedUploadUrl = asset.signedUploadUrl;
+                        request.additionalMetadata = { signedDownloadUrl: asset.signedDownloadUrl };
+                        return request;
+                    });
+                    return exec_client_exec(requestPromise, { apiUrl, token, log });
+                }
+                if (options?.upload && 'signedUploadUrl' in options.upload) {
+                    request.signedUploadUrl = options.upload.signedUploadUrl;
+                }
+                return exec_client_exec(request, { apiUrl, token, log });
+            },
+            async getSimulator() {
+                const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/simulator`, {
+                    method: 'GET',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+                return readJsonResponse(res, 'GET /simulator');
+            },
+            attachSimulator: attachSimulatorImpl,
+            attachNewSimulator: attachNewSimulatorImpl,
+            deleteSimulator: deleteSimulatorImpl,
+            async startRbe(opts) {
+                const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/rbe`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify(opts ?? {}),
+                });
+                return readRbeResponse(res, 'POST /rbe');
+            },
+            async getRbe() {
+                const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/rbe`, {
+                    method: 'GET',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+                return readRbeResponse(res, 'GET /rbe');
+            },
+            async stopRbe() {
+                const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/rbe`, {
+                    method: 'DELETE',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+                return readRbeResponse(res, 'DELETE /rbe');
+            },
+            async startRbeTunnel(opts) {
+                return tunnel_startTcpTunnel(deriveRbeTunnelUrl(apiUrl), token, opts?.host ?? '127.0.0.1', opts?.port ?? DEFAULT_RBE_TUNNEL_PORT, {
+                    mode: 'multiplexed',
+                    logLevel: opts?.logLevel ?? params.logLevel ?? 'info',
+                });
+            },
+            async uploadLatestRbeBuild(opts) {
+                let signedUploadUrl;
+                let signedDownloadUrl;
+                if (opts.assetName !== undefined) {
+                    if (!opts.assetName) {
+                        throw new Error('assetName must not be empty');
+                    }
+                    const asset = await mintAssetUploadUrls(client.assets, opts.assetName, opts.ttl);
+                    signedUploadUrl = asset.signedUploadUrl;
+                    signedDownloadUrl = asset.signedDownloadUrl;
+                }
+                else {
+                    signedUploadUrl = opts.signedUploadUrl;
+                }
+                const post = async () => {
+                    // The daemon uploads to asset storage before responding, so this
+                    // request can go minutes without response bytes.
+                    const res = await proxy_transport_nodeProxyTransport.fetchLongRequest(`${apiUrl}/rbe/upload`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({ signedUploadUrl }),
+                    });
+                    if (res.status === 404) {
+                        // A vanished instance and a limbuild that predates the endpoint
+                        // 404 indistinguishably (identical bodies), and neither is the
+                        // RbeUnsupportedError case (the daemon may well support /rbe),
+                        // hence a plain two-cause error.
+                        await res.text().catch(() => undefined);
+                        throw new Error('POST /rbe/upload returned 404: the instance may no longer exist, or its limbuild ' +
+                            'predates RBE upload support. Recreate the instance and retry.');
+                    }
+                    return readJsonResponse(res, 'POST /rbe/upload');
+                };
+                // Build recording is asynchronous on the daemon (it lands moments
+                // after bazel reports success), so the no-build 400 fired right at
+                // build end is as transient as a gateway blip; retry both classes.
+                const retryOn = (err) => isTransientError(err) ||
+                    (isDirectInstanceHttpError(err, 400) && /no successful RBE app build/i.test(err.body));
+                const result = await retryTransient(post, { retryOn });
+                return { ...result, ...(signedDownloadUrl && { signedDownloadUrl }) };
+            },
+            async getActiveRbeBuilds() {
+                const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/rbe/builds/active`, {
+                    method: 'GET',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+                // readRbeResponse: a 404 here means a limbuild that predates this
+                // route, not a vanished instance (same trap as the other /rbe routes).
+                return readRbeResponse(res, 'GET /rbe/builds/active');
+            },
+            async getRecentRbeBuilds() {
+                const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/rbe/builds/recent`, {
+                    method: 'GET',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+                // readRbeResponse: a 404 here means a limbuild that predates this
+                // route, not a vanished instance (same trap as the other /rbe routes).
+                return readRbeResponse(res, 'GET /rbe/builds/recent');
+            },
+            waitForRbeBuildEnd(invocationId, opts) {
+                return new Promise((resolve, reject) => {
+                    if (opts?.signal?.aborted) {
+                        reject(new Error(`waiting for build ${invocationId} was aborted`));
+                        return;
+                    }
+                    // Both settle paths close the source: eventsource-client
+                    // auto-reconnects otherwise, which would retry-loop against the
+                    // stream once the daemon removes it.
+                    let settled = false;
+                    const cleanup = () => {
+                        eventSource.close();
+                        opts?.signal?.removeEventListener('abort', onAbort);
+                    };
+                    const settleResolve = (end) => {
+                        if (settled)
+                            return;
+                        settled = true;
+                        cleanup();
+                        resolve(end);
+                    };
+                    const settleReject = (err) => {
+                        if (settled)
+                            return;
+                        settled = true;
+                        cleanup();
+                        reject(err);
+                    };
+                    const onAbort = () => settleReject(new Error(`waiting for build ${invocationId} was aborted`));
+                    const eventSource = createEventSource({
+                        url: `${apiUrl}/exec/${invocationId}/events`,
+                        fetch: sseFetch(proxy_transport_nodeProxyTransport.fetch, (err) => settleReject(new Error(`build event stream for ${invocationId} is unreachable: ${err instanceof Error ? err.message : err}`))),
+                        headers: { Authorization: `Bearer ${token}` },
+                        onMessage: (message) => {
+                            if (message.event !== 'end') {
+                                return; // meta and log frames
+                            }
+                            let end;
+                            try {
+                                end = JSON.parse(message.data);
+                            }
+                            catch (err) {
+                                settleReject(new Error(`invalid build end event for ${invocationId}: ${err}`));
+                                return;
+                            }
+                            settleResolve(end);
+                        },
+                        onDisconnect: () => {
+                            settleReject(new Error(`build event stream for ${invocationId} ended without a terminal event ` +
+                                '(the build may have finished and its live stream been removed)'));
+                        },
+                    });
+                    opts?.signal?.addEventListener('abort', onAbort, { once: true });
+                });
+            },
+        };
+    }
+}
+//# sourceMappingURL=xcode-instances-helpers.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/index.mjs
+// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+
+
+
+
+//# sourceMappingURL=index.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/utils/env.mjs
+// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+/**
+ * Read an environment variable.
+ *
+ * Trims beginning and trailing whitespace.
+ *
+ * Will return undefined if the environment variable doesn't exist or cannot be accessed.
+ */
+const readEnv = (env) => {
+    if (typeof globalThis.process !== 'undefined') {
+        return globalThis.process.env?.[env]?.trim() || undefined;
+    }
+    if (typeof globalThis.Deno !== 'undefined') {
+        return globalThis.Deno.env?.get?.(env)?.trim() || undefined;
+    }
+    return undefined;
+};
+//# sourceMappingURL=env.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/client.mjs
+// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+var _Limrun_instances, _a, _Limrun_encoder, _Limrun_baseURLOverridden;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/**
+ * API Client for interfacing with the Limrun API.
+ */
+class Limrun {
+    /**
+     * API Client for interfacing with the Limrun API.
+     *
+     * @param {string | null | undefined} [opts.apiKey=process.env['LIM_API_KEY'] ?? null]
+     * @param {string} [opts.baseURL=process.env['LIMRUN_BASE_URL'] ?? https://api.limrun.com] - Override the default base URL for the API.
+     * @param {number} [opts.timeout=5 minutes] - The maximum amount of time (in milliseconds) the client will wait for a response before timing out.
+     * @param {MergedRequestInit} [opts.fetchOptions] - Additional `RequestInit` options to be passed to `fetch` calls.
+     * @param {Fetch} [opts.fetch] - Specify a custom `fetch` function implementation.
+     * @param {number} [opts.maxRetries=2] - The maximum number of times the client will retry a request.
+     * @param {HeadersLike} opts.defaultHeaders - Default headers to include with every request to the API.
+     * @param {Record<string, string | undefined>} opts.defaultQuery - Default query parameters to include with every request to the API.
+     */
+    constructor({ baseURL = readEnv('LIMRUN_BASE_URL'), apiKey = readEnv('LIM_API_KEY') ?? null, ...opts } = {}) {
+        _Limrun_instances.add(this);
+        _Limrun_encoder.set(this, void 0);
+        this.androidInstances = new AndroidInstances(this);
+        this.assets = new Assets(this);
+        this.iosInstances = new IosInstances(this);
+        this.xcodeInstances = new XcodeInstances(this);
+        this.analytics = new Analytics(this);
+        const options = {
+            apiKey,
+            ...opts,
+            baseURL: baseURL || `https://api.limrun.com`,
+        };
+        this.baseURL = options.baseURL;
+        this.timeout = options.timeout ?? _a.DEFAULT_TIMEOUT /* 5 minutes */;
+        this.logger = options.logger ?? console;
+        const defaultLogLevel = 'warn';
+        // Set default logLevel early so that we can log a warning in parseLogLevel.
+        this.logLevel = defaultLogLevel;
+        this.logLevel =
+            parseLogLevel(options.logLevel, 'ClientOptions.logLevel', this) ??
+                parseLogLevel(readEnv('LIMRUN_LOG'), "process.env['LIMRUN_LOG']", this) ??
+                defaultLogLevel;
+        this.fetchOptions = options.fetchOptions;
+        this.maxRetries = options.maxRetries ?? 2;
+        this.fetch = options.fetch ?? getDefaultFetch();
+        __classPrivateFieldSet(this, _Limrun_encoder, FallbackEncoder, "f");
+        const customHeadersEnv = readEnv('LIMRUN_CUSTOM_HEADERS');
+        if (customHeadersEnv) {
+            const parsed = {};
+            for (const line of customHeadersEnv.split('\n')) {
+                const colon = line.indexOf(':');
+                if (colon >= 0) {
+                    parsed[line.substring(0, colon).trim()] = line.substring(colon + 1).trim();
+                }
+            }
+            options.defaultHeaders = { ...parsed, ...options.defaultHeaders };
+        }
+        this._options = options;
+        this.apiKey = apiKey;
+    }
+    /**
+     * Create a new client instance re-using the same options given to the current client with optional overriding.
+     */
+    withOptions(options) {
+        const client = new this.constructor({
+            ...this._options,
+            baseURL: this.baseURL,
+            maxRetries: this.maxRetries,
+            timeout: this.timeout,
+            logger: this.logger,
+            logLevel: this.logLevel,
+            fetch: this.fetch,
+            fetchOptions: this.fetchOptions,
+            apiKey: this.apiKey,
+            ...options,
+        });
+        return client;
+    }
+    defaultQuery() {
+        return this._options.defaultQuery;
+    }
+    validateHeaders({ values, nulls }) {
+        if (this.apiKey && values.get('authorization')) {
+            return;
+        }
+        if (nulls.has('authorization')) {
+            return;
+        }
+        throw new Error('Could not resolve authentication method. Expected the apiKey to be set. Or for the "Authorization" headers to be explicitly omitted');
+    }
+    async authHeaders(opts) {
+        if (this.apiKey == null) {
+            return undefined;
+        }
+        return buildHeaders([{ Authorization: `Bearer ${this.apiKey}` }]);
+    }
+    /**
+     * Basic re-implementation of `qs.stringify` for primitive types.
+     */
+    stringifyQuery(query) {
+        return stringifyQuery(query);
+    }
+    getUserAgent() {
+        return `${this.constructor.name}/JS ${api_version_VERSION}`;
+    }
+    defaultIdempotencyKey() {
+        return `stainless-node-retry-${uuid4()}`;
+    }
+    makeStatusError(status, error, message, headers) {
+        return APIError.generate(status, error, message, headers);
+    }
+    buildURL(path, query, defaultBaseURL) {
+        const baseURL = (!__classPrivateFieldGet(this, _Limrun_instances, "m", _Limrun_baseURLOverridden).call(this) && defaultBaseURL) || this.baseURL;
+        const url = isAbsoluteURL(path) ?
+            new URL(path)
+            : new URL(baseURL + (baseURL.endsWith('/') && path.startsWith('/') ? path.slice(1) : path));
+        const defaultQuery = this.defaultQuery();
+        const pathQuery = Object.fromEntries(url.searchParams);
+        if (!isEmptyObj(defaultQuery) || !isEmptyObj(pathQuery)) {
+            query = { ...pathQuery, ...defaultQuery, ...query };
+        }
+        if (typeof query === 'object' && query && !Array.isArray(query)) {
+            url.search = this.stringifyQuery(query);
+        }
+        return url.toString();
+    }
+    /**
+     * Used as a callback for mutating the given `FinalRequestOptions` object.
+     */
+    async prepareOptions(options) { }
+    /**
+     * Used as a callback for mutating the given `RequestInit` object.
+     *
+     * This is useful for cases where you want to add certain headers based off of
+     * the request properties, e.g. `method` or `url`.
+     */
+    async prepareRequest(request, { url, options }) { }
+    get(path, opts) {
+        return this.methodRequest('get', path, opts);
+    }
+    post(path, opts) {
+        return this.methodRequest('post', path, opts);
+    }
+    patch(path, opts) {
+        return this.methodRequest('patch', path, opts);
+    }
+    put(path, opts) {
+        return this.methodRequest('put', path, opts);
+    }
+    delete(path, opts) {
+        return this.methodRequest('delete', path, opts);
+    }
+    methodRequest(method, path, opts) {
+        return this.request(Promise.resolve(opts).then((opts) => {
+            return { method, path, ...opts };
+        }));
+    }
+    request(options, remainingRetries = null) {
+        return new APIPromise(this, this.makeRequest(options, remainingRetries, undefined));
+    }
+    async makeRequest(optionsInput, retriesRemaining, retryOfRequestLogID) {
+        const options = await optionsInput;
+        const maxRetries = options.maxRetries ?? this.maxRetries;
+        if (retriesRemaining == null) {
+            retriesRemaining = maxRetries;
+        }
+        await this.prepareOptions(options);
+        const { req, url, timeout } = await this.buildRequest(options, {
+            retryCount: maxRetries - retriesRemaining,
+        });
+        await this.prepareRequest(req, { url, options });
+        /** Not an API request ID, just for correlating local log entries. */
+        const requestLogID = 'log_' + ((Math.random() * (1 << 24)) | 0).toString(16).padStart(6, '0');
+        const retryLogStr = retryOfRequestLogID === undefined ? '' : `, retryOf: ${retryOfRequestLogID}`;
+        const startTime = Date.now();
+        loggerFor(this).debug(`[${requestLogID}] sending request`, formatRequestDetails({
+            retryOfRequestLogID,
+            method: options.method,
+            url,
+            options,
+            headers: req.headers,
+        }));
+        if (options.signal?.aborted) {
+            throw new APIUserAbortError();
+        }
+        const controller = new AbortController();
+        const response = await this.fetchWithTimeout(url, req, timeout, controller).catch(castToError);
+        const headersTime = Date.now();
+        if (response instanceof globalThis.Error) {
+            const retryMessage = `retrying, ${retriesRemaining} attempts remaining`;
+            if (options.signal?.aborted) {
+                throw new APIUserAbortError();
+            }
+            // detect native connection timeout errors
+            // deno throws "TypeError: error sending request for url (https://example/): client error (Connect): tcp connect error: Operation timed out (os error 60): Operation timed out (os error 60)"
+            // undici throws "TypeError: fetch failed" with cause "ConnectTimeoutError: Connect Timeout Error (attempted address: example:443, timeout: 1ms)"
+            // others do not provide enough information to distinguish timeouts from other connection errors
+            const isTimeout = isAbortError(response) ||
+                /timed? ?out/i.test(String(response) + ('cause' in response ? String(response.cause) : ''));
+            if (retriesRemaining) {
+                loggerFor(this).info(`[${requestLogID}] connection ${isTimeout ? 'timed out' : 'failed'} - ${retryMessage}`);
+                loggerFor(this).debug(`[${requestLogID}] connection ${isTimeout ? 'timed out' : 'failed'} (${retryMessage})`, formatRequestDetails({
+                    retryOfRequestLogID,
+                    url,
+                    durationMs: headersTime - startTime,
+                    message: response.message,
+                }));
+                return this.retryRequest(options, retriesRemaining, retryOfRequestLogID ?? requestLogID);
+            }
+            loggerFor(this).info(`[${requestLogID}] connection ${isTimeout ? 'timed out' : 'failed'} - error; no more retries left`);
+            loggerFor(this).debug(`[${requestLogID}] connection ${isTimeout ? 'timed out' : 'failed'} (error; no more retries left)`, formatRequestDetails({
+                retryOfRequestLogID,
+                url,
+                durationMs: headersTime - startTime,
+                message: response.message,
+            }));
+            if (isTimeout) {
+                throw new APIConnectionTimeoutError();
+            }
+            throw new APIConnectionError({ cause: response });
+        }
+        const responseInfo = `[${requestLogID}${retryLogStr}] ${req.method} ${url} ${response.ok ? 'succeeded' : 'failed'} with status ${response.status} in ${headersTime - startTime}ms`;
+        if (!response.ok) {
+            const shouldRetry = await this.shouldRetry(response);
+            if (retriesRemaining && shouldRetry) {
+                const retryMessage = `retrying, ${retriesRemaining} attempts remaining`;
+                // We don't need the body of this response.
+                await CancelReadableStream(response.body);
+                loggerFor(this).info(`${responseInfo} - ${retryMessage}`);
+                loggerFor(this).debug(`[${requestLogID}] response error (${retryMessage})`, formatRequestDetails({
+                    retryOfRequestLogID,
+                    url: response.url,
+                    status: response.status,
+                    headers: response.headers,
+                    durationMs: headersTime - startTime,
+                }));
+                return this.retryRequest(options, retriesRemaining, retryOfRequestLogID ?? requestLogID, response.headers);
+            }
+            const retryMessage = shouldRetry ? `error; no more retries left` : `error; not retryable`;
+            loggerFor(this).info(`${responseInfo} - ${retryMessage}`);
+            const errText = await response.text().catch((err) => castToError(err).message);
+            const errJSON = safeJSON(errText);
+            const errMessage = errJSON ? undefined : errText;
+            loggerFor(this).debug(`[${requestLogID}] response error (${retryMessage})`, formatRequestDetails({
+                retryOfRequestLogID,
+                url: response.url,
+                status: response.status,
+                headers: response.headers,
+                message: errMessage,
+                durationMs: Date.now() - startTime,
+            }));
+            const err = this.makeStatusError(response.status, errJSON, errMessage, response.headers);
+            throw err;
+        }
+        loggerFor(this).info(responseInfo);
+        loggerFor(this).debug(`[${requestLogID}] response start`, formatRequestDetails({
+            retryOfRequestLogID,
+            url: response.url,
+            status: response.status,
+            headers: response.headers,
+            durationMs: headersTime - startTime,
+        }));
+        return { response, options, controller, requestLogID, retryOfRequestLogID, startTime };
+    }
+    getAPIList(path, Page, opts) {
+        return this.requestAPIList(Page, opts && 'then' in opts ?
+            opts.then((opts) => ({ method: 'get', path, ...opts }))
+            : { method: 'get', path, ...opts });
+    }
+    requestAPIList(Page, options) {
+        const request = this.makeRequest(options, null, undefined);
+        return new PagePromise(this, request, Page);
+    }
+    async fetchWithTimeout(url, init, ms, controller) {
+        const { signal, method, ...options } = init || {};
+        const abort = this._makeAbort(controller);
+        if (signal)
+            signal.addEventListener('abort', abort, { once: true });
+        const timeout = setTimeout(abort, ms);
+        const isReadableBody = (globalThis.ReadableStream && options.body instanceof globalThis.ReadableStream) ||
+            (typeof options.body === 'object' && options.body !== null && Symbol.asyncIterator in options.body);
+        const fetchOptions = {
+            signal: controller.signal,
+            ...(isReadableBody ? { duplex: 'half' } : {}),
+            method: 'GET',
+            ...options,
+        };
+        if (method) {
+            // Custom methods like 'patch' need to be uppercased
+            // See https://github.com/nodejs/undici/issues/2294
+            fetchOptions.method = method.toUpperCase();
+        }
+        try {
+            // use undefined this binding; fetch errors if bound to something else in browser/cloudflare
+            return await this.fetch.call(undefined, url, fetchOptions);
+        }
+        finally {
+            clearTimeout(timeout);
+        }
+    }
+    async shouldRetry(response) {
+        // Note this is not a standard header.
+        const shouldRetryHeader = response.headers.get('x-should-retry');
+        // If the server explicitly says whether or not to retry, obey.
+        if (shouldRetryHeader === 'true')
+            return true;
+        if (shouldRetryHeader === 'false')
+            return false;
+        // Retry on request timeouts.
+        if (response.status === 408)
+            return true;
+        // Retry on lock timeouts.
+        if (response.status === 409)
+            return true;
+        // Retry on rate limits.
+        if (response.status === 429)
+            return true;
+        // Retry internal errors.
+        if (response.status >= 500)
+            return true;
+        return false;
+    }
+    async retryRequest(options, retriesRemaining, requestLogID, responseHeaders) {
+        let timeoutMillis;
+        // Note the `retry-after-ms` header may not be standard, but is a good idea and we'd like proactive support for it.
+        const retryAfterMillisHeader = responseHeaders?.get('retry-after-ms');
+        if (retryAfterMillisHeader) {
+            const timeoutMs = parseFloat(retryAfterMillisHeader);
+            if (!Number.isNaN(timeoutMs)) {
+                timeoutMillis = timeoutMs;
+            }
+        }
+        // About the Retry-After header: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Retry-After
+        const retryAfterHeader = responseHeaders?.get('retry-after');
+        if (retryAfterHeader && !timeoutMillis) {
+            const timeoutSeconds = parseFloat(retryAfterHeader);
+            if (!Number.isNaN(timeoutSeconds)) {
+                timeoutMillis = timeoutSeconds * 1000;
+            }
+            else {
+                timeoutMillis = Date.parse(retryAfterHeader) - Date.now();
+            }
+        }
+        // If the API asks us to wait a certain amount of time, just do what it
+        // says, but otherwise calculate a default
+        if (timeoutMillis === undefined) {
+            const maxRetries = options.maxRetries ?? this.maxRetries;
+            timeoutMillis = this.calculateDefaultRetryTimeoutMillis(retriesRemaining, maxRetries);
+        }
+        await sleep(timeoutMillis);
+        return this.makeRequest(options, retriesRemaining - 1, requestLogID);
+    }
+    calculateDefaultRetryTimeoutMillis(retriesRemaining, maxRetries) {
+        const initialRetryDelay = 0.5;
+        const maxRetryDelay = 8.0;
+        const numRetries = maxRetries - retriesRemaining;
+        // Apply exponential backoff, but not more than the max.
+        const sleepSeconds = Math.min(initialRetryDelay * Math.pow(2, numRetries), maxRetryDelay);
+        // Apply some jitter, take up to at most 25 percent of the retry time.
+        const jitter = 1 - Math.random() * 0.25;
+        return sleepSeconds * jitter * 1000;
+    }
+    async buildRequest(inputOptions, { retryCount = 0 } = {}) {
+        const options = { ...inputOptions };
+        const { method, path, query, defaultBaseURL } = options;
+        const url = this.buildURL(path, query, defaultBaseURL);
+        if ('timeout' in options)
+            validatePositiveInteger('timeout', options.timeout);
+        options.timeout = options.timeout ?? this.timeout;
+        const { bodyHeaders, body } = this.buildBody({ options });
+        const reqHeaders = await this.buildHeaders({ options: inputOptions, method, bodyHeaders, retryCount });
+        const req = {
+            method,
+            headers: reqHeaders,
+            ...(options.signal && { signal: options.signal }),
+            ...(globalThis.ReadableStream &&
+                body instanceof globalThis.ReadableStream && { duplex: 'half' }),
+            ...(body && { body }),
+            ...(this.fetchOptions ?? {}),
+            ...(options.fetchOptions ?? {}),
+        };
+        return { req, url, timeout: options.timeout };
+    }
+    async buildHeaders({ options, method, bodyHeaders, retryCount, }) {
+        let idempotencyHeaders = {};
+        if (this.idempotencyHeader && method !== 'get') {
+            if (!options.idempotencyKey)
+                options.idempotencyKey = this.defaultIdempotencyKey();
+            idempotencyHeaders[this.idempotencyHeader] = options.idempotencyKey;
+        }
+        const headers = buildHeaders([
+            idempotencyHeaders,
+            {
+                Accept: 'application/json',
+                'User-Agent': this.getUserAgent(),
+                'X-Stainless-Retry-Count': String(retryCount),
+                ...(options.timeout ? { 'X-Stainless-Timeout': String(Math.trunc(options.timeout / 1000)) } : {}),
+                ...getPlatformHeaders(),
+            },
+            await this.authHeaders(options),
+            this._options.defaultHeaders,
+            bodyHeaders,
+            options.headers,
+        ]);
+        this.validateHeaders(headers);
+        return headers.values;
+    }
+    _makeAbort(controller) {
+        // note: we can't just inline this method inside `fetchWithTimeout()` because then the closure
+        //       would capture all request options, and cause a memory leak.
+        return () => controller.abort();
+    }
+    buildBody({ options }) {
+        const { body, headers: rawHeaders } = options;
+        if (!body) {
+            // A resource method always passes a `body` key when its operation defines a
+            // request body, even if the caller omitted an optional body param. Keep the
+            // content-type for those, and only elide it for operations with no body at
+            // all (e.g. GET/DELETE).
+            if (body == null && 'body' in options) {
+                return __classPrivateFieldGet(this, _Limrun_encoder, "f").call(this, { body, headers: buildHeaders([rawHeaders]) });
+            }
+            return { bodyHeaders: undefined, body: undefined };
+        }
+        const headers = buildHeaders([rawHeaders]);
+        if (
+        // Pass raw type verbatim
+        ArrayBuffer.isView(body) ||
+            body instanceof ArrayBuffer ||
+            body instanceof DataView ||
+            (typeof body === 'string' &&
+                // Preserve legacy string encoding behavior for now
+                headers.values.has('content-type')) ||
+            // `Blob` is superset of `File`
+            (globalThis.Blob && body instanceof globalThis.Blob) ||
+            // `FormData` -> `multipart/form-data`
+            body instanceof FormData ||
+            // `URLSearchParams` -> `application/x-www-form-urlencoded`
+            body instanceof URLSearchParams ||
+            // Send chunked stream (each chunk has own `length`)
+            (globalThis.ReadableStream && body instanceof globalThis.ReadableStream)) {
+            return { bodyHeaders: undefined, body: body };
+        }
+        else if (typeof body === 'object' &&
+            (Symbol.asyncIterator in body ||
+                (Symbol.iterator in body && 'next' in body && typeof body.next === 'function'))) {
+            return { bodyHeaders: undefined, body: shims_ReadableStreamFrom(body) };
+        }
+        else if (typeof body === 'object' &&
+            headers.values.get('content-type') === 'application/x-www-form-urlencoded') {
+            return {
+                bodyHeaders: { 'content-type': 'application/x-www-form-urlencoded' },
+                body: this.stringifyQuery(body),
+            };
+        }
+        else {
+            return __classPrivateFieldGet(this, _Limrun_encoder, "f").call(this, { body, headers });
+        }
+    }
+}
+_a = Limrun, _Limrun_encoder = new WeakMap(), _Limrun_instances = new WeakSet(), _Limrun_baseURLOverridden = function _Limrun_baseURLOverridden() {
+    return this.baseURL !== 'https://api.limrun.com';
+};
+Limrun.Limrun = _a;
+Limrun.DEFAULT_TIMEOUT = 300000; // 5 minutes
+Limrun.LimrunError = error_LimrunError;
+Limrun.APIError = APIError;
+Limrun.APIConnectionError = APIConnectionError;
+Limrun.APIConnectionTimeoutError = APIConnectionTimeoutError;
+Limrun.APIUserAbortError = APIUserAbortError;
+Limrun.NotFoundError = NotFoundError;
+Limrun.ConflictError = ConflictError;
+Limrun.RateLimitError = RateLimitError;
+Limrun.BadRequestError = BadRequestError;
+Limrun.AuthenticationError = AuthenticationError;
+Limrun.InternalServerError = InternalServerError;
+Limrun.PermissionDeniedError = PermissionDeniedError;
+Limrun.UnprocessableEntityError = UnprocessableEntityError;
+Limrun.toFile = toFile;
+Limrun.AndroidInstances = AndroidInstances;
+Limrun.Assets = Assets;
+Limrun.IosInstances = IosInstances;
+Limrun.XcodeInstances = XcodeInstances;
+Limrun.Analytics = Analytics;
+//# sourceMappingURL=client.mjs.map
+;// CONCATENATED MODULE: external "node:child_process"
+const external_node_child_process_namespaceObject = require("node:child_process");
+;// CONCATENATED MODULE: external "stream/promises"
+const promises_namespaceObject = require("stream/promises");
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/download-file.mjs
+
+
+
+
+
+async function download_file_downloadFileToLocalPath(url, token, localPath) {
+    const maxRetries = 3;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const response = await nodeProxyTransport.fetch(url, {
+            method: 'GET',
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+        });
+        if (!response.ok) {
+            const errorBody = await response.text();
+            const isRetriable = response.status >= 500 && response.status < 600;
+            if (isRetriable && attempt < maxRetries) {
+                continue;
+            }
+            throw new Error(`Download failed: ${response.status} ${errorBody}`);
+        }
+        if (!response.body) {
+            throw new Error('Download failed: response body is missing');
+        }
+        await fs.promises.mkdir(path.dirname(localPath), { recursive: true });
+        await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(localPath));
+        return;
+    }
+}
+//# sourceMappingURL=download-file.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/instance-client.mjs
 
 
@@ -85450,6 +87330,7 @@ async function createInstanceClient(options) {
                 case 'scrollScreenResult':
                 case 'scrollElementResult':
                 case 'openUrlResult':
+                case 'playOnMicrophoneResult':
                 case 'setWifiBandwidthResult':
                 case 'startRecordingResult':
                 case 'stopRecordingResult':
@@ -85657,6 +87538,7 @@ async function createInstanceClient(options) {
                         scrollScreen,
                         scrollElement,
                         openUrl,
+                        playOnMicrophone,
                         setWifiBandwidth,
                         startRecording,
                         stopRecording,
@@ -85735,6 +87617,15 @@ async function createInstanceClient(options) {
             return {
                 url: typeof result.url === 'string' ? result.url : url,
             };
+        };
+        const playOnMicrophone = async (inputPath, microphoneOptions) => {
+            if (!inputPath) {
+                throw new Error('path must be a non-empty string');
+            }
+            return sendRequest('playOnMicrophone', {
+                path: inputPath,
+                ...(microphoneOptions?.once === undefined ? {} : { once: microphoneOptions.once }),
+            });
         };
         const setWifiBandwidth = async (bandwidthOptions) => {
             const request = {};
@@ -85890,6 +87781,299 @@ async function createInstanceClient(options) {
     });
 }
 //# sourceMappingURL=instance-client.mjs.map
+// EXTERNAL MODULE: ./node_modules/yauzl/index.js
+var node_modules_yauzl = __nccwpck_require__(663);
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/app-archive.mjs
+
+
+
+
+
+
+const app_archive_noopLogger = () => { };
+function app_archive_sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+function stableArchiveRoot(archivePath) {
+    const resolved = path.resolve(archivePath);
+    const hash = crypto.createHash('sha1').update(resolved).digest('hex').slice(0, 12);
+    const base = path
+        .basename(resolved, path.extname(resolved))
+        .replace(/[^A-Za-z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    const safeBase = base === '' ? 'app' : base;
+    return path.join(os.tmpdir(), `limrun-sync-app-${safeBase}-${hash}`);
+}
+function stableAppPath(archivePath) {
+    return path.join(stableArchiveRoot(archivePath), 'Extracted.app');
+}
+function toZipPath(name) {
+    return name.replace(/\\/g, '/');
+}
+function isUnsafeZipPath(name) {
+    if (name.includes('\0'))
+        return true;
+    if (path.posix.isAbsolute(name))
+        return true;
+    return name.split('/').some((part) => part === '..');
+}
+function entryMode(entry) {
+    return (entry.externalFileAttributes >>> 16) & 0xffff;
+}
+function isSymlinkEntry(entry) {
+    return (entryMode(entry) & 0o170000) === 0o120000;
+}
+function isDirectoryEntry(entry) {
+    return entry.fileName.endsWith('/');
+}
+function entryPerm(entry, fallback) {
+    return entryMode(entry) & 0o7777 || fallback;
+}
+async function openZip(archivePath) {
+    try {
+        return await yauzl.openPromise(archivePath, {
+            autoClose: false,
+            lazyEntries: true,
+            strictFileNames: true,
+            validateEntrySizes: true,
+        });
+    }
+    catch (err) {
+        const message = err instanceof Error ? `: ${err.message}` : '';
+        throw new Error(`The path is not a valid app bundle directory or ZIP/IPA archive: ${archivePath}${message}`);
+    }
+}
+async function readEntries(zip) {
+    const entries = [];
+    for await (const entry of zip.eachEntry()) {
+        entries.push(entry);
+    }
+    return entries;
+}
+async function ensureDirectoryNotSymlink(dir) {
+    const stat = await fs.promises.lstat(dir).catch((err) => {
+        if (err.code === 'ENOENT')
+            return null;
+        throw err;
+    });
+    if (stat && (!stat.isDirectory() || stat.isSymbolicLink())) {
+        await fs.promises.rm(dir, { recursive: true, force: true });
+    }
+    await fs.promises.mkdir(dir, { recursive: true });
+}
+function discoverPayloadApp(entries, archivePath) {
+    const appNames = new Set();
+    const appsWithInfoPlist = new Set();
+    for (const entry of entries) {
+        const name = toZipPath(entry.fileName);
+        if (isUnsafeZipPath(name)) {
+            throw new Error(`ZIP entry has an unsafe path: ${entry.fileName}`);
+        }
+        if (isDirectoryEntry(entry)) {
+            continue;
+        }
+        const rest = name.startsWith('Payload/') ? name.slice('Payload/'.length) : '';
+        if (rest === '') {
+            continue;
+        }
+        const [appName, ...parts] = rest.split('/');
+        if (!appName?.endsWith('.app')) {
+            continue;
+        }
+        appNames.add(appName);
+        if (parts.join('/') === 'Info.plist') {
+            appsWithInfoPlist.add(appName);
+        }
+    }
+    if (appNames.size === 0) {
+        throw new Error(`ZIP/IPA archive contains no Payload/*.app bundle: ${archivePath}`);
+    }
+    if (appNames.size > 1) {
+        throw new Error(`ZIP/IPA archive contains more than one Payload/*.app bundle (${[...appNames].join(', ')}); expected exactly one`);
+    }
+    const appName = [...appNames][0];
+    if (!appsWithInfoPlist.has(appName)) {
+        throw new Error(`ZIP/IPA archive app bundle is missing Info.plist: Payload/${appName}/Info.plist`);
+    }
+    return appName;
+}
+async function extractEntry(zip, entry, target, appRoot) {
+    if (isDirectoryEntry(entry)) {
+        await fs.promises.mkdir(target, { recursive: true, mode: entryPerm(entry, 0o755) });
+        return;
+    }
+    await fs.promises.mkdir(path.dirname(target), { recursive: true });
+    if (isSymlinkEntry(entry)) {
+        const stream = await zip.openReadStreamPromise(entry);
+        const chunks = [];
+        for await (const chunk of stream) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        const linkTarget = Buffer.concat(chunks).toString('utf8');
+        const resolved = path.resolve(path.dirname(target), linkTarget);
+        const appRootResolved = path.resolve(appRoot);
+        if (resolved !== appRootResolved && !resolved.startsWith(appRootResolved + path.sep)) {
+            throw new Error(`ZIP/IPA symlink escapes app bundle: ${entry.fileName} -> ${linkTarget}`);
+        }
+        await fs.promises.rm(target, { force: true });
+        await fs.promises.symlink(linkTarget, target);
+        return;
+    }
+    const stream = await zip.openReadStreamPromise(entry);
+    await pipeline(stream, fs.createWriteStream(target, { mode: entryPerm(entry, 0o644) }));
+    await fs.promises.chmod(target, entryPerm(entry, 0o644));
+}
+async function extractAppArchiveToStablePath(archivePath) {
+    const resolvedArchivePath = path.resolve(archivePath);
+    const appPath = stableAppPath(resolvedArchivePath);
+    const stableRoot = path.dirname(appPath);
+    await ensureDirectoryNotSymlink(stableRoot);
+    const zip = await openZip(resolvedArchivePath);
+    try {
+        const entries = await readEntries(zip);
+        const appName = discoverPayloadApp(entries, resolvedArchivePath);
+        const payloadPrefix = `Payload/${appName}/`;
+        await fs.promises.rm(appPath, { recursive: true, force: true });
+        await ensureDirectoryNotSymlink(appPath);
+        for (const entry of entries) {
+            const name = toZipPath(entry.fileName);
+            if (name !== `Payload/${appName}` && !name.startsWith(payloadPrefix)) {
+                continue;
+            }
+            const rel = name === `Payload/${appName}` ? '' : name.slice(payloadPrefix.length);
+            if (rel === '') {
+                await fs.promises.mkdir(appPath, { recursive: true });
+                continue;
+            }
+            if (isUnsafeZipPath(rel)) {
+                throw new Error(`ZIP entry has an unsafe app-relative path: ${entry.fileName}`);
+            }
+            const target = path.join(appPath, rel.split('/').join(path.sep));
+            const stagingAppResolved = path.resolve(appPath);
+            const targetResolved = path.resolve(target);
+            if (targetResolved !== stagingAppResolved &&
+                !targetResolved.startsWith(stagingAppResolved + path.sep)) {
+                throw new Error(`ZIP entry escapes app bundle: ${entry.fileName}`);
+            }
+            await extractEntry(zip, entry, target, appPath);
+        }
+        return {
+            appPath,
+            cacheIdentityPath: resolvedArchivePath,
+            isArchive: true,
+            archivePath: resolvedArchivePath,
+        };
+    }
+    finally {
+        zip.close();
+    }
+}
+async function app_archive_prepareAppBundlePath(inputPath) {
+    const resolvedPath = path.resolve(inputPath);
+    const stat = await fs.promises.stat(resolvedPath);
+    if (stat.isDirectory()) {
+        return {
+            appPath: resolvedPath,
+            cacheIdentityPath: resolvedPath,
+            isArchive: false,
+        };
+    }
+    if (!stat.isFile()) {
+        throw new Error(`The path is neither an app bundle directory nor a ZIP/IPA archive: ${inputPath}`);
+    }
+    return await extractAppArchiveToStablePath(resolvedPath);
+}
+async function waitForStableArchiveFile(archivePath, shouldStop) {
+    const deadline = Date.now() + 10000;
+    let previous;
+    while (!shouldStop() && Date.now() < deadline) {
+        const stat = await fs.promises.stat(archivePath).catch((err) => {
+            if (err.code === 'ENOENT')
+                return null;
+            throw err;
+        });
+        if (stat?.isFile()) {
+            const current = { size: stat.size, mtimeMs: stat.mtimeMs };
+            if (previous && previous.size === current.size && previous.mtimeMs === current.mtimeMs) {
+                return true;
+            }
+            previous = current;
+        }
+        else {
+            previous = undefined;
+        }
+        await app_archive_sleep(100);
+    }
+    return false;
+}
+function app_archive_watchAppArchive(opts) {
+    const archivePath = path.resolve(opts.archivePath);
+    const log = opts.log ?? app_archive_noopLogger;
+    const parentDir = path.dirname(archivePath);
+    const archiveBase = path.basename(archivePath);
+    let timer;
+    let inFlight = false;
+    let queued = false;
+    let closed = false;
+    const run = async () => {
+        if (closed)
+            return;
+        if (inFlight) {
+            queued = true;
+            return;
+        }
+        inFlight = true;
+        try {
+            const ready = await waitForStableArchiveFile(archivePath, () => closed);
+            if (!ready) {
+                if (!closed) {
+                    log('warn', `ZIP/IPA archive did not become readable after change: ${archivePath}`);
+                }
+                return;
+            }
+            await extractAppArchiveToStablePath(archivePath);
+            log('debug', `re-extracted ZIP/IPA archive: ${archivePath}`);
+            await opts.onExtracted?.();
+        }
+        catch (err) {
+            log('error', `failed to re-extract ZIP/IPA archive ${archivePath}: ${err instanceof Error ? err.message : err}`);
+        }
+        finally {
+            inFlight = false;
+            if (queued) {
+                queued = false;
+                void run();
+            }
+        }
+    };
+    const schedule = () => {
+        if (closed)
+            return;
+        if (timer)
+            clearTimeout(timer);
+        timer = setTimeout(() => {
+            timer = undefined;
+            void run();
+        }, 500);
+    };
+    const watcher = fs.watch(parentDir, (_eventType, filename) => {
+        if (filename?.toString() === archiveBase) {
+            schedule();
+        }
+    });
+    log('debug', `watchAppArchive: ${archivePath}`);
+    return {
+        close: () => {
+            closed = true;
+            if (timer) {
+                clearTimeout(timer);
+                timer = undefined;
+            }
+            watcher.close();
+        },
+    };
+}
+//# sourceMappingURL=app-archive.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/http-proxy.mjs
 
 
@@ -85966,7 +88150,6 @@ const FORWARDED_SIMCTL_COMMANDS = new Set([
     'privacy',
     'location',
     'status_bar',
-    'spawn',
 ]);
 async function startXcrunShim(client) {
     const server = await startXcrunShimServer({ client, udid: client.deviceInfo.udid });
@@ -86301,6 +88484,7 @@ function sendJson(res, statusCode, payload) {
 }
 //# sourceMappingURL=ios-shim.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/ios-client.mjs
+
 
 
 
@@ -86736,7 +88920,7 @@ async function ios_client_createInstanceClient(options) {
         };
         const redactRequestForDebug = (request) => {
             if (request['type'] !== 'launchApp') {
-                return request;
+                return 'encryptionKey' in request ? { ...request, encryptionKey: '[REDACTED]' } : request;
             }
             const runtime = request['runtime'];
             return {
@@ -86806,6 +88990,10 @@ async function ios_client_createInstanceClient(options) {
             appInstallationResult: (msg) => ({
                 url: msg.url || '',
                 bundleId: msg.bundleId || '',
+            }),
+            keychainExportResult: () => undefined,
+            keychainImportResult: (msg) => ({
+                durationMs: msg.durationMs ?? 0,
             }),
             startVideoRecordingResult: () => undefined,
             stopVideoRecordingResult: () => undefined,
@@ -86969,6 +89157,8 @@ async function ios_client_createInstanceClient(options) {
                         listApps,
                         openUrl,
                         installApp,
+                        saveKeychain,
+                        restoreKeychain,
                         setOrientation,
                         scroll,
                         performActions,
@@ -87092,6 +89282,12 @@ async function ios_client_createInstanceClient(options) {
                 launchMode: options?.launchMode,
             }, undefined, options?.timeoutMs ?? 120000);
         };
+        const saveKeychain = async (keychainOptions) => {
+            await sendRequest('exportKeychain', { url: keychainOptions.url, encryptionKey: keychainOptions.encryptionKey }, undefined, 120000);
+        };
+        const restoreKeychain = async (keychainOptions) => {
+            return sendRequest('importKeychain', { url: keychainOptions.url, encryptionKey: keychainOptions.encryptionKey }, undefined, 120000);
+        };
         const setOrientation = (orientation) => {
             return sendRequest('setOrientation', { orientation });
         };
@@ -87141,7 +89337,9 @@ async function ios_client_createInstanceClient(options) {
             }));
         };
         const syncApp = async (localAppBundlePath, opts) => {
-            const infoPlistPath = path.join(localAppBundlePath, 'Info.plist');
+            const preparedApp = await prepareAppBundlePath(localAppBundlePath);
+            const appBundlePath = preparedApp.appPath;
+            const infoPlistPath = path.join(appBundlePath, 'Info.plist');
             const infoPlistStat = await fs.promises.stat(infoPlistPath).catch(() => null);
             if (!infoPlistStat?.isFile()) {
                 throw new Error(`The folder is not a valid app bundle: missing Info.plist at ${infoPlistPath}`);
@@ -87149,11 +89347,12 @@ async function ios_client_createInstanceClient(options) {
             if (!cachedDeviceInfo) {
                 throw new Error('Device info not available yet; wait for client connection to be established.');
             }
-            const resolvedPath = path.resolve(localAppBundlePath);
+            const resolvedPath = path.resolve(preparedApp.cacheIdentityPath);
             const folderName = path.basename(resolvedPath);
             const hash = crypto.createHash('sha1').update(resolvedPath).digest('hex').slice(0, 8);
             const cacheKey = `limsync-cache-${folderName}-${hash}`;
             const basisCacheDir = opts?.basisCacheDir ?? path.join(os.tmpdir(), cacheKey);
+            const shouldWatch = opts?.watch ?? true;
             const syncLog = (level, msg) => {
                 switch (level) {
                     case 'debug':
@@ -87177,15 +89376,31 @@ async function ios_client_createInstanceClient(options) {
                 apiUrl: options.apiUrl,
                 token: options.token,
                 udid: cacheKey,
-                ignoreFn: await createIgnoreFn(localAppBundlePath, { basisCacheDir, log: syncLog }),
+                ignoreFn: await createIgnoreFn(appBundlePath, { basisCacheDir, log: syncLog }),
                 basisCacheDir,
                 log: syncLog,
                 install: opts?.install ?? true,
                 maxPatchBytes: opts?.maxPatchBytes ?? 4 * 1024 * 1024,
                 launchMode: opts?.launchMode ?? 'ForegroundIfRunning',
-                watch: opts?.watch ?? true,
+                watch: preparedApp.isArchive ? false : shouldWatch,
             };
-            return await syncFolder(localAppBundlePath, folderSyncOpts);
+            const result = await syncFolder(appBundlePath, folderSyncOpts);
+            if (!preparedApp.isArchive || !preparedApp.archivePath || !shouldWatch) {
+                return result;
+            }
+            const archiveWatcher = watchAppArchive({
+                archivePath: preparedApp.archivePath,
+                log: syncLog,
+                onExtracted: async () => {
+                    await syncFolder(appBundlePath, folderSyncOpts);
+                },
+            });
+            return {
+                ...result,
+                stopWatching: () => {
+                    archiveWatcher.close();
+                },
+            };
         };
         const lsof = () => {
             return sendRequest('listOpenFiles', { kind: 'unix' });
@@ -87423,8 +89638,394 @@ async function ios_client_createInstanceClient(options) {
     });
 }
 //# sourceMappingURL=ios-client.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/rbe-workspace.mjs
+// Mirrored between src/rbe-workspace.ts (canonical) and packages/cli/src/lib/rbe-workspace.ts
+// until the CLI imports it from a published @limrun/api; tests/rbe-copy-sync.test.ts keeps the
+// two copies byte-identical. Apply any edit to both.
+
+
+/**
+ * Generates the .limrun/ workspace companion for Limrun remote execution: a Bazel
+ * package pinning the remote fleet's Xcode version and an rc fragment with the
+ * remote-execution flags under the `limrun` config. The caller learns the
+ * fleet's version key from the instance's RBE status, so the generated config
+ * always matches the fleet without any user action; regenerating the files
+ * after a fleet Xcode upgrade refreshes the pin.
+ */
+const LIMRUN_DIR = '.limrun';
+const TRY_IMPORT_LINE = 'try-import %workspace%/.limrun/bazelrc';
+const TRY_IMPORT_COMMENT = '# Added by Limrun remote-execution setup: loads the generated config.';
+const WORKSPACE_MARKERS = (/* unused pure expression or super */ null && (['MODULE.bazel', 'WORKSPACE', 'WORKSPACE.bazel']));
+/**
+ * Finds the Bazel workspace root by walking up from `startDir` to the first
+ * ancestor containing a MODULE.bazel / WORKSPACE / WORKSPACE.bazel, mirroring
+ * how Bazel itself locates the workspace when run from a subdirectory. Returns
+ * null when no workspace is found up to the filesystem root. The generated
+ * `.limrun/` and the `try-import` must live at this root, since `%workspace%`
+ * in bazelrc resolves here regardless of the directory the build is run from.
+ */
+function findBazelWorkspaceRoot(startDir) {
+    let dir = path.resolve(startDir);
+    for (;;) {
+        if (WORKSPACE_MARKERS.some((m) => fs.existsSync(path.join(dir, m)))) {
+            return dir;
+        }
+        const parent = path.dirname(dir);
+        if (parent === dir) {
+            return null;
+        }
+        dir = parent;
+    }
+}
+const APP_RULE_RE = /\b(?:ios|macos|tvos|watchos)_application\s*\(/;
+const TARGET_NAME_RE = /^\s*name\s*=\s*"([^"]+)"/;
+const TARGET_SCAN_SKIP_DIRS = new Set(['.git', 'node_modules', '.limrun']);
+/**
+ * Best-effort guess of a single buildable app target to show in the printed
+ * build command, so it reads `//App` instead of a `//your:target` placeholder.
+ * Scans the workspace's BUILD files (buildifier-formatted) for apple
+ * `*_application` rules (no bazel invocation) and returns the label in short
+ * form (`//pkg` when the target name matches the package's last segment).
+ * Returns null when there are zero or multiple candidates (ambiguous → caller
+ * keeps the placeholder).
+ */
+function inferBuildTarget(workspaceRoot) {
+    const found = [];
+    const walk = (dir) => {
+        if (found.length > 1)
+            return; // already ambiguous; stop early
+        let entries;
+        try {
+            entries = external_fs_.readdirSync(dir, { withFileTypes: true });
+        }
+        catch {
+            return;
+        }
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                if (TARGET_SCAN_SKIP_DIRS.has(entry.name) || entry.name.startsWith('bazel-'))
+                    continue;
+                walk(external_path_.join(dir, entry.name));
+            }
+            else if (entry.name === 'BUILD' || entry.name === 'BUILD.bazel') {
+                collectAppTargets(external_path_.join(dir, entry.name), workspaceRoot, found);
+            }
+        }
+    };
+    walk(workspaceRoot);
+    return found.length === 1 ? found[0] : null;
+}
+/** Appends `//pkg[:name]` labels of apple application rules in one BUILD file. */
+function collectAppTargets(buildFile, workspaceRoot, out) {
+    let content;
+    try {
+        content = external_fs_.readFileSync(buildFile, 'utf8');
+    }
+    catch {
+        return;
+    }
+    const pkg = external_path_.relative(workspaceRoot, external_path_.dirname(buildFile)).split(external_path_.sep).join('/');
+    let inAppRule = false;
+    for (const line of content.split('\n')) {
+        // Skip comment lines so a commented-out `# ios_application(` can't start a
+        // phantom rule (and a commented `# name = ...` can't be captured), which
+        // would otherwise leave inAppRule set and mislabel a later rule's name.
+        if (line.trimStart().startsWith('#'))
+            continue;
+        if (!inAppRule) {
+            if (APP_RULE_RE.test(line))
+                inAppRule = true;
+            continue;
+        }
+        const match = line.match(TARGET_NAME_RE);
+        if (match) {
+            const name = match[1];
+            const last = pkg.split('/').pop();
+            out.push(pkg === '' || pkg === '.' ? `//:${name}`
+                : last === name ? `//${pkg}`
+                    : `//${pkg}:${name}`);
+            inAppRule = false;
+        }
+        else if (/^\)/.test(line)) {
+            inAppRule = false; // rule closed before a name line we could read
+        }
+    }
+}
+/**
+ * Reads the workspace's pinned Bazel major version from `.bazelversion`, or
+ * null when the file is absent or its first line has no leading integer.
+ *
+ * Used to decide whether the generated BUILD must `load` the Xcode rules from
+ * apple_support: in Bazel 9 they are no longer native globals and must be
+ * loaded, while in Bazel 8 they ARE native globals and the apple_support rule
+ * impls `fail()` on the unmigrated Bazel, so loading them there breaks
+ * analysis. The generator runs in the workspace on the client, so the file is
+ * the authoritative signal for the Bazel that bazelisk will launch.
+ */
+function detectBazelMajorVersion(workspaceDir) {
+    try {
+        const raw = external_fs_.readFileSync(external_path_.join(workspaceDir, '.bazelversion'), 'utf8');
+        const firstLine = (raw.split('\n', 1)[0] ?? '').trim();
+        const match = firstLine.match(/^(\d+)/);
+        return match ? Number(match[1]) : null;
+    }
+    catch {
+        return null;
+    }
+}
+/**
+ * Whether to treat the workspace as Bazel 9+ for RBE config: true when the
+ * detected major version is >= 9, OR unknown (no `.bazelversion` means bazelisk
+ * runs the latest release, which is 9+). This single predicate decides both
+ * emitting the apple_support Xcode-rule loads and surfacing the SHA256 digest
+ * hint, so the two stay in lockstep.
+ */
+function isBazel9OrLater(bazelMajor) {
+    return bazelMajor === null || bazelMajor >= 9;
+}
+/** Major.minor short alias (e.g. "26.4") used for the SDK default and --xcode_version. */
+function shortVersion(versionKey) {
+    const parts = versionKey.split('.');
+    if (parts.length < 3) {
+        throw new Error(`unexpected Xcode version key from the instance: ${versionKey}`);
+    }
+    return `${parts[0]}.${parts[1]}`;
+}
+/** Renders one xcode_version rule from a major.minor.patch.build version key. */
+function renderXcodeVersionRule(name, versionKey) {
+    // shortVersion validates the key shape (major.minor.patch[.build]) and yields
+    // the major.minor used for both the SDK defaults and the short alias.
+    const sdk = shortVersion(versionKey);
+    const parts = versionKey.split('.');
+    const fullAlias = `${parts[0]}.${parts[1]}.${parts[2]}`;
+    return `xcode_version(
+    name = "${name}",
+    aliases = [
+        "${sdk}",
+        "${fullAlias}",
+    ],
+    default_ios_sdk_version = "${sdk}",
+    default_macos_sdk_version = "${sdk}",
+    default_tvos_sdk_version = "${sdk}",
+    default_watchos_sdk_version = "${sdk}",
+    version = "${versionKey}",
+)`;
+}
+/**
+ * Renders an `available_xcodes` set with a single member that is also its
+ * mandatory default. Both sets the BUILD file emits (remote, local) are
+ * single-version sets of this shape, pointing at the same fleet pin.
+ */
+function renderAvailableXcodes(name, target) {
+    return `available_xcodes(
+    name = "${name}",
+    default = "${target}",
+    versions = ["${target}"],
+)`;
+}
+/**
+ * Renders the generated Bazel package pinning the Xcode version to the fleet's.
+ *
+ * remoteVersionKey is the fleet's `xcodebuild -version` in major.minor.patch.build
+ * form (e.g. 26.4.0.17E192).
+ *
+ * Uses Bazel's remote/local `xcode_config` split with BOTH sets pointing at the
+ * SAME fleet pin (rather than a single `default=/versions=` bucket, which
+ * resolves with availability UNKNOWN and leaves Apple/Swift actions eligible for
+ * local execution). With local == remote, `--xcode_version` resolves as
+ * "mutually available" (BOTH), which declares up front that this build uses only
+ * the fleet's Xcode AND keeps apple_support from emitting its remote-only
+ * "...specified, but it is not available locally..." DEBUG notice (that notice
+ * fires only when the pinned version is in `remote_versions` but not
+ * `local_versions`).
+ *
+ * We intentionally do NOT name the client's own local Xcode: under
+ * `--config=limrun` every action runs remotely (`--spawn_strategy=remote` +
+ * `--noremote_local_fallback`), so a local DEVELOPER_DIR is never resolved.
+ * Declaring a distinct local version would only reintroduce that DEBUG notice on
+ * a client whose Xcode differs from the fleet's. (The fleet pin is used, not
+ * Bazel's `@local_config_xcode//:host_available_xcodes`: that repo is not
+ * visible from the main module under bzlmod and is never generated off-darwin.)
+ *
+ * When `emitLoads` is true (Bazel 9+), the Xcode rules are loaded from
+ * apple_support; on Bazel 8 they are native globals and MUST NOT be loaded
+ * (the apple_support rule impls fail on the unmigrated Bazel).
+ */
+function renderXcodeConfigBuild(remoteVersionKey, emitLoads) {
+    // Bazel 9 migrated xcode_version/available_xcodes/xcode_config out of native
+    // globals into apple_support; they must be loaded there. The repo_name
+    // @build_bazel_apple_support is the apple_support module convention.
+    const loads = emitLoads ?
+        `load("@build_bazel_apple_support//xcode:xcode_version.bzl", "xcode_version")
+load("@build_bazel_apple_support//xcode:available_xcodes.bzl", "available_xcodes")
+load("@build_bazel_apple_support//xcode:xcode_config.bzl", "xcode_config")
+
+`
+        : '';
+    const remoteRule = renderXcodeVersionRule('remote_xcode', remoteVersionKey);
+    return `# Generated by lim xcode rbe. Do not edit; rerun the command to refresh.
+#
+# Pins the Xcode version Bazel uses to the limrun fleet's Xcode, independent of
+# any Xcode installed on this machine. Both the remote and local sets point at
+# the SAME pin so --xcode_version resolves as mutually available (no
+# apple_support remote-only DEBUG notice); under --config=limrun all actions run
+# remotely, so a local DEVELOPER_DIR is never resolved. Selected via
+# .limrun/bazelrc (--config=limrun).
+${loads}${remoteRule}
+
+# Both sets point at the single fleet pin.
+${renderAvailableXcodes('remote_xcodes', ':remote_xcode')}
+
+${renderAvailableXcodes('local_xcodes', ':remote_xcode')}
+
+xcode_config(
+    name = "remote_xcode_config",
+    remote_versions = ":remote_xcodes",
+    local_versions = ":local_xcodes",
+)
+`;
+}
+/**
+ * Renders the rc fragment with the remote-execution flags under
+ * --config=limrun.
+ *
+ * - `--remote_cache=` (empty) clears any workspace-level `--remote_cache`. The
+ *   limrun executor carries its own CAS, so a separate cache backend (e.g. a
+ *   repo pointing `--remote_cache` at BuildBuddy/EngFlow) splits inputs and
+ *   outputs across two stores the executor cannot reconcile, surfacing as "Lost
+ *   inputs no longer available remotely". Emptying it under --config=limrun
+ *   routes caching back to the executor's CAS while leaving the repo's non-limrun
+ *   builds (where that cache is valid) untouched.
+ * - The `--bes_*` flags stream the Build Event Protocol to the daemon's BES
+ *   service, co-hosted on the same RBE frontend as the executor (hence the same
+ *   `127.0.0.1:${port}`), powering the live + persisted console.
+ *   `--bes_upload_mode=nowait_for_upload_complete` keeps the current build from
+ *   blocking at exit on the BES upload (the wait moves to the start of the next
+ *   invocation, bounded by `--bes_timeout`), while streams stay complete/acked
+ *   for the persisted record. An older daemon without the BES service registered
+ *   answers PublishBuildEvent with a non-fatal warning, so the flags are safe
+ *   ahead of the image rollout.
+ * - `--xcode_version` pins the fleet's version: without it, a mac client
+ *   lacking that exact version has no mutual version and silently falls back
+ *   to its LOCAL default, shipping the wrong version to the remote worker via
+ *   XCODE_VERSION_OVERRIDE (the worker then rejects it).
+ * - `--strategy=SwiftCompile=remote` / `--strategy=Genrule=remote` override
+ *   mnemonic-specific strategies a workspace may pin (rules_swift defaults
+ *   SwiftCompile to a local persistent `worker`; repos often pin Genrule to
+ *   `standalone`). Those run locally and break RBE: a local Swift worker can't
+ *   run on a Linux client at all, and on a mac it would demand the fleet's
+ *   Xcode locally. --spawn_strategy=remote does not override per-mnemonic
+ *   pins, so these explicit overrides are required.
+ * - `--ios_multi_cpus=sim_arm64` pins the app to the **arm64 iOS simulator**.
+ *   Limrun's Mac fleet (workers and the attached simulators) is Apple Silicon,
+ *   so the build product must be arm64. Without this, the simulator cpu follows
+ *   the CLIENT's Bazel default (`sim_arm64` on an Apple Silicon Mac, but
+ *   `x86_64` on an Intel Mac or a Linux client), and an x86_64 app installed on
+ *   the arm64 fleet simulator fails to launch with "needs to be updated by the
+ *   developer to work on this version of iOS". The pin makes the artifact match
+ *   the fleet regardless of where bazel runs (the whole point of RBE).
+ * - PATH includes /usr/sbin:/sbin so genrules that probe `sysctl` (e.g.
+ *   `hw.logicalcpu` for `make -j`) resolve it on the worker.
+ * - `--remote_download_outputs=minimal` keeps the built .ipa in the instance's
+ *   CAS instead of downloading it; the daemon auto-installs it server-side from
+ *   there (driven by the BES stream), so the bytes never round-trip. The printed
+ *   `lim xcode rbe` output tells users to add `--remote_download_outputs=toplevel`
+ *   on the command line when they want the .ipa materialized locally (a
+ *   command-line flag overrides this rc setting).
+ * - `--extra_execution_platforms` is emitted ONLY for non-mac clients: a Linux
+ *   host has no auto-detected darwin execution platform, so the Apple/Swift
+ *   toolchain (exec_compatible_with macos) needs one registered to route
+ *   actions to the mac RBE pool. On a mac it is HARMFUL: it makes bazel run
+ *   exec-config actions on the local host instead of the remote worker, which
+ *   then demand a local Xcode.
+ * - `--modify_execution_info=.*=-no-remote,.*=-no-remote-exec` strips the
+ *   `no-remote`/`no-remote-exec` execution-info tags rules_apple sets on
+ *   bundling/linking/signing actions (in-code on device builds, and via its
+ *   recommended `+no-remote` bazelrc that real iOS repos carry). Under
+ *   --config=limrun every action runs remotely, so any such tag leaves the
+ *   action with no usable strategy ("cannot be executed with any of the
+ *   available strategies: [remote]") and the build fails. That is the exact
+ *   breakage a Linux client (no local Xcode) hits. This is the execution-info
+ *   analog of the --strategy=...=remote overrides above; stripping globally is
+ *   safe because removing a tag an action never had is a no-op.
+ * - A `user.limrun.bazelrc` at the workspace root is try-imported last as a user
+ *   override hook, so callers can extend or override the generated config
+ *   without editing this file or passing flags on the command line.
+ */
+function renderLimrunBazelrc(port, versionKey, isMacClient) {
+    const execPlatform = isMacClient ? '' : ('build:limrun --extra_execution_platforms=@build_bazel_apple_support//platforms:darwin_arm64\n');
+    return `# Generated by lim xcode rbe. Do not edit; rerun the command to refresh.
+build:limrun --remote_executor=grpc://127.0.0.1:${port}
+build:limrun --bes_backend=grpc://127.0.0.1:${port}
+build:limrun --bes_upload_mode=nowait_for_upload_complete
+build:limrun --bes_timeout=60s
+build:limrun --remote_cache=
+build:limrun --remote_default_exec_properties=OSFamily=Darwin
+build:limrun --spawn_strategy=remote
+build:limrun --noremote_local_fallback
+build:limrun --strategy=SwiftCompile=remote
+build:limrun --strategy=Genrule=remote
+build:limrun --modify_execution_info=.*=-no-remote,.*=-no-remote-exec
+build:limrun --xcode_version_config=//.limrun:remote_xcode_config
+build:limrun --xcode_version=${shortVersion(versionKey)}
+build:limrun --ios_multi_cpus=sim_arm64
+build:limrun --remote_download_outputs=minimal
+${execPlatform}build:limrun --action_env=PATH=/usr/bin:/bin:/usr/sbin:/sbin
+
+# A user.limrun.bazelrc at the workspace root is try-imported last, so it can
+# extend or override anything above without editing this generated file or
+# passing flags on the command line. A missing file is silently skipped.
+try-import %workspace%/user.limrun.bazelrc
+`;
+}
+/**
+ * Idempotently ensures the workspace .bazelrc try-imports the generated
+ * fragment. Creates .bazelrc when missing. Returns true when the file changed.
+ */
+function ensureTryImport(workspaceDir) {
+    const bazelrcPath = external_path_.join(workspaceDir, '.bazelrc');
+    let current = '';
+    if (external_fs_.existsSync(bazelrcPath)) {
+        current = external_fs_.readFileSync(bazelrcPath, 'utf8');
+        // Match the try-import on a line basis (exact, uncommented) rather than a
+        // raw substring, so a commented-out occurrence (e.g. `# try-import ...`)
+        // doesn't make us skip wiring the active import.
+        const alreadyWired = current.split('\n').some((line) => line.trim() === TRY_IMPORT_LINE);
+        if (alreadyWired) {
+            return false;
+        }
+    }
+    const block = `${TRY_IMPORT_COMMENT}\n${TRY_IMPORT_LINE}\n`;
+    const next = current === '' ? block : `${current.replace(/\n*$/, '\n\n')}${block}`;
+    external_fs_.writeFileSync(bazelrcPath, next);
+    return true;
+}
+/**
+ * Writes .limrun/{BUILD,bazelrc,.gitignore} into the workspace and wires the
+ * try-import. The .gitignore containing "*" makes the directory self-ignoring
+ * so nothing else in the user's repo needs to change.
+ */
+function writeRbeWorkspaceFiles(workspaceDir, xcodeVersionKey, port, isMacClient = process.platform === 'darwin', bazelMajor = detectBazelMajorVersion(workspaceDir)) {
+    const dir = external_path_.join(workspaceDir, LIMRUN_DIR);
+    external_fs_.mkdirSync(dir, { recursive: true });
+    const buildFile = external_path_.join(dir, 'BUILD');
+    const bazelrcFragment = external_path_.join(dir, 'bazelrc');
+    // Load the Xcode rules from apple_support on Bazel 9+, where they are no
+    // longer native globals. On a known Bazel 8 workspace they ARE native (and
+    // loading would fail), so omit the loads.
+    const emitLoads = isBazel9OrLater(bazelMajor);
+    external_fs_.writeFileSync(buildFile, renderXcodeConfigBuild(xcodeVersionKey, emitLoads));
+    external_fs_.writeFileSync(bazelrcFragment, renderLimrunBazelrc(port, xcodeVersionKey, isMacClient));
+    external_fs_.writeFileSync(external_path_.join(dir, '.gitignore'), '*\n');
+    const bazelrcUpdated = ensureTryImport(workspaceDir);
+    return { buildFile, bazelrcFragment, bazelrcUpdated };
+}
+//# sourceMappingURL=rbe-workspace.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/index.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+
+
 
 
 
@@ -87504,6 +90105,8 @@ async function updateCommentClosed(token, owner, repo, prNumber, platform) {
 }
 
 ;// CONCATENATED MODULE: ./src/index.ts
+
+
 
 
 
@@ -87598,6 +90201,69 @@ async function cleanupXcodeInstances(client, labelSelector) {
         }
     }
 }
+/** Bazel mode applies only when project-path itself is the workspace root
+ *  (matching the documented contract); an ancestor marker (e.g. a monorepo's
+ *  root MODULE.bazel above an xcodebuild app) must not flip the mode. */
+function isBazelWorkspaceRoot(dir) {
+    return ["MODULE.bazel", "WORKSPACE", "WORKSPACE.bazel"].some((marker) => (0,external_fs_.existsSync)((0,external_path_.join)(dir, marker)));
+}
+/** PATH lookup only: actually invoking bazelisk would download a Bazel release. */
+function bazeliskAvailable() {
+    const exts = process.platform === "win32" ? [".exe", ".cmd", ""] : [""];
+    return (process.env.PATH ?? "")
+        .split(process.platform === "win32" ? ";" : ":")
+        .filter(Boolean)
+        .some((dir) => exts.some((ext) => (0,external_fs_.existsSync)((0,external_path_.join)(dir, `bazelisk${ext}`))));
+}
+function runBazelisk(args, cwd) {
+    return new Promise((resolvePromise, reject) => {
+        info(`$ bazelisk ${args.join(" ")}`);
+        const child = (0,external_child_process_namespaceObject.spawn)("bazelisk", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+        // Bazel writes its progress to stderr; log both streams as info.
+        child.stdout.on("data", (chunk) => logChunk(chunk.toString(), info));
+        child.stderr.on("data", (chunk) => logChunk(chunk.toString(), info));
+        child.on("error", (err) => {
+            reject(err.code === "ENOENT"
+                ? new Error("bazelisk not found on PATH. Install it in a prior step (e.g. bazel-contrib/setup-bazel).")
+                : err);
+        });
+        child.on("close", (code, signal) => {
+            if (code === 0) {
+                resolvePromise();
+            }
+            else if (signal) {
+                // e.g. OOM-killed on a memory-starved runner, or job cancellation.
+                reject(new Error(`bazel build was killed by ${signal}`));
+            }
+            else {
+                reject(new Error(`bazel build failed with exit code ${code}`));
+            }
+        });
+    });
+}
+async function buildWithBazel(xcode, workspaceRoot, target, assetName) {
+    info("Starting remote build execution...");
+    const initial = await retryTransient(() => xcode.startRbe(), { log: info });
+    const status = await waitForRbeRunning(xcode, initial);
+    info(`Remote build execution ready (Xcode ${status.xcodeVersion}).`);
+    // Bind before writing the config so a busy default port (a concurrent job on
+    // the same self-hosted runner) picks a free one instead of failing the job.
+    const tunnel = await xcode.startRbeTunnel({ port: 0 });
+    try {
+        writeRbeWorkspaceFiles(workspaceRoot, status.xcodeVersion, tunnel.address.port);
+        await runBazelisk(["--digest_function=sha256", "build", "--config=limrun", target], workspaceRoot);
+        info(`Uploading the built app as asset "${assetName}"...`);
+        // No retry wrapper: the SDK retries transient errors and the build-record
+        // race internally.
+        const result = await xcode.uploadLatestRbeBuild({ assetName });
+        info(`Uploaded ${result.appName}.`);
+    }
+    finally {
+        // No stopRbe: the instance is deleted right after, which tears the stack
+        // down with it, and a ~20s stop would only slow the job down.
+        tunnel.close();
+    }
+}
 async function runPost() {
     const apiKey = getInput("api-key", { required: true });
     core_setSecret(apiKey);
@@ -87675,6 +90341,41 @@ async function runMain() {
         setFailed(`project-path "${projectPath}" must be a directory.`);
         return;
     }
+    // A Bazel workspace at project-path switches the build to remote build
+    // execution: bazel runs here on the runner with Apple actions executing on
+    // the instance, so nothing is synced and xcodebuild inputs don't apply.
+    const workspaceRoot = (0,external_path_.resolve)(projectPath);
+    const bazelMode = isBazelWorkspaceRoot(workspaceRoot);
+    const bazelTarget = getOptionalInput("bazel-target");
+    let resolvedBazelTarget;
+    if (bazelTarget && !bazelMode) {
+        setFailed(`bazel-target is set but project-path "${projectPath}" is not a Bazel workspace root ` +
+            "(no MODULE.bazel, WORKSPACE, or WORKSPACE.bazel there).");
+        return;
+    }
+    if (bazelMode) {
+        // Silently dropping explicit xcodebuild config would build a different
+        // artifact than the workflow declares; fail loud instead.
+        const xcodebuildOnly = ["project", "workspace", "scheme"].filter((name) => getOptionalInput(name));
+        if (buildSettings)
+            xcodebuildOnly.push("build-settings");
+        if (xcodebuildOnly.length > 0) {
+            setFailed(`${xcodebuildOnly.join(", ")} only applies to xcodebuild projects, but project-path is a ` +
+                "Bazel workspace. For Bazel builds, configure via BUILD files or user.limrun.bazelrc.");
+            return;
+        }
+        // Resolve the target and check for bazelisk before creating the instance,
+        // so config errors don't cost a full instance boot.
+        resolvedBazelTarget = bazelTarget ?? inferBuildTarget(workspaceRoot) ?? undefined;
+        if (!resolvedBazelTarget) {
+            setFailed("Could not infer a single app target in the Bazel workspace; set the bazel-target input (e.g. //App).");
+            return;
+        }
+        if (!bazeliskAvailable()) {
+            setFailed("bazelisk not found on PATH. Install it in a prior step (e.g. bazel-contrib/setup-bazel).");
+            return;
+        }
+    }
     try {
         info("Creating Xcode instance...");
         const xcodeInstance = await client.xcodeInstances.create({
@@ -87687,19 +90388,24 @@ async function runMain() {
         });
         info(`Xcode instance ready: ${xcodeInstance.metadata.id}`);
         const xcode = await client.xcodeInstances.createClient({ instance: xcodeInstance });
-        info(`Syncing project from ${projectPath}...`);
-        await xcode.sync(projectPath, { watch: false, install: false });
-        info(`Building project and uploading asset "${assetName}"...`);
-        const build = xcode.xcodebuild(getXcodeProjectConfig(), {
-            upload: { assetName },
-            ...(buildSettings && { buildSettings }),
-        });
-        build.command.on("data", (chunk) => logChunk(chunk.toString(), info, "$ "));
-        build.stdout.on("data", (chunk) => logChunk(chunk.toString(), info));
-        build.stderr.on("data", (chunk) => logChunk(chunk.toString(), warning));
-        const result = await build;
-        if (result.exitCode !== 0) {
-            throw new Error(`xcodebuild failed with exit code ${result.exitCode}`);
+        if (resolvedBazelTarget) {
+            await buildWithBazel(xcode, workspaceRoot, resolvedBazelTarget, assetName);
+        }
+        else {
+            info(`Syncing project from ${projectPath}...`);
+            await xcode.sync(projectPath, { watch: false, install: false });
+            info(`Building project and uploading asset "${assetName}"...`);
+            const build = xcode.xcodebuild(getXcodeProjectConfig(), {
+                upload: { assetName },
+                ...(buildSettings && { buildSettings }),
+            });
+            build.command.on("data", (chunk) => logChunk(chunk.toString(), info, "$ "));
+            build.stdout.on("data", (chunk) => logChunk(chunk.toString(), info));
+            build.stderr.on("data", (chunk) => logChunk(chunk.toString(), warning));
+            const result = await build;
+            if (result.exitCode !== 0) {
+                throw new Error(`xcodebuild failed with exit code ${result.exitCode}`);
+            }
         }
     }
     finally {

@@ -1,7 +1,17 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import Limrun, { parseBuildSettingEntries, type XcodeProjectConfig } from "@limrun/api";
+import Limrun, {
+  inferBuildTarget,
+  parseBuildSettingEntries,
+  retryTransient,
+  waitForRbeRunning,
+  writeRbeWorkspaceFiles,
+  type XcodeClient,
+  type XcodeProjectConfig,
+} from "@limrun/api";
+import { spawn } from "child_process";
 import { existsSync, statSync } from "fs";
+import { join, resolve } from "path";
 import { postOrUpdateComment, updateCommentClosed } from "./comment";
 
 const IS_POST_RUN_STATE = "is-post-run";
@@ -105,6 +115,82 @@ async function cleanupXcodeInstances(client: Limrun, labelSelector: string): Pro
   }
 }
 
+/** Bazel mode applies only when project-path itself is the workspace root
+ *  (matching the documented contract); an ancestor marker (e.g. a monorepo's
+ *  root MODULE.bazel above an xcodebuild app) must not flip the mode. */
+function isBazelWorkspaceRoot(dir: string): boolean {
+  return ["MODULE.bazel", "WORKSPACE", "WORKSPACE.bazel"].some((marker) =>
+    existsSync(join(dir, marker))
+  );
+}
+
+/** PATH lookup only: actually invoking bazelisk would download a Bazel release. */
+function bazeliskAvailable(): boolean {
+  const exts = process.platform === "win32" ? [".exe", ".cmd", ""] : [""];
+  return (process.env.PATH ?? "")
+    .split(process.platform === "win32" ? ";" : ":")
+    .filter(Boolean)
+    .some((dir) => exts.some((ext) => existsSync(join(dir, `bazelisk${ext}`))));
+}
+
+function runBazelisk(args: string[], cwd: string): Promise<void> {
+  return new Promise((resolvePromise, reject) => {
+    core.info(`$ bazelisk ${args.join(" ")}`);
+    const child = spawn("bazelisk", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    // Bazel writes its progress to stderr; log both streams as info.
+    child.stdout.on("data", (chunk) => logChunk(chunk.toString(), core.info));
+    child.stderr.on("data", (chunk) => logChunk(chunk.toString(), core.info));
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      reject(
+        err.code === "ENOENT"
+          ? new Error(
+              "bazelisk not found on PATH. Install it in a prior step (e.g. bazel-contrib/setup-bazel)."
+            )
+          : err
+      );
+    });
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        resolvePromise();
+      } else if (signal) {
+        // e.g. OOM-killed on a memory-starved runner, or job cancellation.
+        reject(new Error(`bazel build was killed by ${signal}`));
+      } else {
+        reject(new Error(`bazel build failed with exit code ${code}`));
+      }
+    });
+  });
+}
+
+async function buildWithBazel(
+  xcode: XcodeClient,
+  workspaceRoot: string,
+  target: string,
+  assetName: string
+): Promise<void> {
+  core.info("Starting remote build execution...");
+  const initial = await retryTransient(() => xcode.startRbe(), { log: core.info });
+  const status = await waitForRbeRunning(xcode, initial);
+  core.info(`Remote build execution ready (Xcode ${status.xcodeVersion}).`);
+
+  // Bind before writing the config so a busy default port (a concurrent job on
+  // the same self-hosted runner) picks a free one instead of failing the job.
+  const tunnel = await xcode.startRbeTunnel({ port: 0 });
+  try {
+    writeRbeWorkspaceFiles(workspaceRoot, status.xcodeVersion, tunnel.address.port);
+    await runBazelisk(["--digest_function=sha256", "build", "--config=limrun", target], workspaceRoot);
+    core.info(`Uploading the built app as asset "${assetName}"...`);
+    // No retry wrapper: the SDK retries transient errors and the build-record
+    // race internally.
+    const result = await xcode.uploadLatestRbeBuild({ assetName });
+    core.info(`Uploaded ${result.appName}.`);
+  } finally {
+    // No stopRbe: the instance is deleted right after, which tears the stack
+    // down with it, and a ~20s stop would only slow the job down.
+    tunnel.close();
+  }
+}
+
 async function runPost(): Promise<void> {
   const apiKey = core.getInput("api-key", { required: true });
   core.setSecret(apiKey);
@@ -191,6 +277,49 @@ async function runMain(): Promise<void> {
     return;
   }
 
+  // A Bazel workspace at project-path switches the build to remote build
+  // execution: bazel runs here on the runner with Apple actions executing on
+  // the instance, so nothing is synced and xcodebuild inputs don't apply.
+  const workspaceRoot = resolve(projectPath);
+  const bazelMode = isBazelWorkspaceRoot(workspaceRoot);
+  const bazelTarget = getOptionalInput("bazel-target");
+  let resolvedBazelTarget: string | undefined;
+  if (bazelTarget && !bazelMode) {
+    core.setFailed(
+      `bazel-target is set but project-path "${projectPath}" is not a Bazel workspace root ` +
+        "(no MODULE.bazel, WORKSPACE, or WORKSPACE.bazel there)."
+    );
+    return;
+  }
+  if (bazelMode) {
+    // Silently dropping explicit xcodebuild config would build a different
+    // artifact than the workflow declares; fail loud instead.
+    const xcodebuildOnly = ["project", "workspace", "scheme"].filter((name) => getOptionalInput(name));
+    if (buildSettings) xcodebuildOnly.push("build-settings");
+    if (xcodebuildOnly.length > 0) {
+      core.setFailed(
+        `${xcodebuildOnly.join(", ")} only applies to xcodebuild projects, but project-path is a ` +
+          "Bazel workspace. For Bazel builds, configure via BUILD files or user.limrun.bazelrc."
+      );
+      return;
+    }
+    // Resolve the target and check for bazelisk before creating the instance,
+    // so config errors don't cost a full instance boot.
+    resolvedBazelTarget = bazelTarget ?? inferBuildTarget(workspaceRoot) ?? undefined;
+    if (!resolvedBazelTarget) {
+      core.setFailed(
+        "Could not infer a single app target in the Bazel workspace; set the bazel-target input (e.g. //App)."
+      );
+      return;
+    }
+    if (!bazeliskAvailable()) {
+      core.setFailed(
+        "bazelisk not found on PATH. Install it in a prior step (e.g. bazel-contrib/setup-bazel)."
+      );
+      return;
+    }
+  }
+
   try {
     core.info("Creating Xcode instance...");
     const xcodeInstance = await client.xcodeInstances.create({
@@ -204,22 +333,27 @@ async function runMain(): Promise<void> {
     core.info(`Xcode instance ready: ${xcodeInstance.metadata.id}`);
 
     const xcode = await client.xcodeInstances.createClient({ instance: xcodeInstance });
-    core.info(`Syncing project from ${projectPath}...`);
-    await xcode.sync(projectPath, { watch: false, install: false });
 
-    core.info(`Building project and uploading asset "${assetName}"...`);
-    const build = xcode.xcodebuild(getXcodeProjectConfig(), {
-      upload: { assetName },
-      ...(buildSettings && { buildSettings }),
-    });
+    if (resolvedBazelTarget) {
+      await buildWithBazel(xcode, workspaceRoot, resolvedBazelTarget, assetName);
+    } else {
+      core.info(`Syncing project from ${projectPath}...`);
+      await xcode.sync(projectPath, { watch: false, install: false });
 
-    build.command.on("data", (chunk) => logChunk(chunk.toString(), core.info, "$ "));
-    build.stdout.on("data", (chunk) => logChunk(chunk.toString(), core.info));
-    build.stderr.on("data", (chunk) => logChunk(chunk.toString(), core.warning));
+      core.info(`Building project and uploading asset "${assetName}"...`);
+      const build = xcode.xcodebuild(getXcodeProjectConfig(), {
+        upload: { assetName },
+        ...(buildSettings && { buildSettings }),
+      });
 
-    const result = await build;
-    if (result.exitCode !== 0) {
-      throw new Error(`xcodebuild failed with exit code ${result.exitCode}`);
+      build.command.on("data", (chunk) => logChunk(chunk.toString(), core.info, "$ "));
+      build.stdout.on("data", (chunk) => logChunk(chunk.toString(), core.info));
+      build.stderr.on("data", (chunk) => logChunk(chunk.toString(), core.warning));
+
+      const result = await build;
+      if (result.exitCode !== 0) {
+        throw new Error(`xcodebuild failed with exit code ${result.exitCode}`);
+      }
     }
   } finally {
     await cleanupXcodeInstances(client, labelSelector);
