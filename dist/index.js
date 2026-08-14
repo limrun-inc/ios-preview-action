@@ -75851,14 +75851,6 @@ module.exports = require("node:zlib");
 
 /***/ }),
 
-/***/ 6928:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("path");
-
-/***/ }),
-
 /***/ 2203:
 /***/ ((module) => {
 
@@ -76616,8 +76608,8 @@ function file_command_prepareKeyValueMessage(key, value) {
     return `${key}<<${delimiter}${external_os_namespaceObject.EOL}${convertedValue}${external_os_namespaceObject.EOL}${delimiter}`;
 }
 //# sourceMappingURL=file-command.js.map
-// EXTERNAL MODULE: external "path"
-var external_path_ = __nccwpck_require__(6928);
+;// CONCATENATED MODULE: external "path"
+const external_path_namespaceObject = require("path");
 // EXTERNAL MODULE: external "http"
 var external_http_ = __nccwpck_require__(8611);
 // EXTERNAL MODULE: external "https"
@@ -77984,7 +77976,7 @@ function tryGetExecutablePath(filePath, extensions) {
         if (stats && stats.isFile()) {
             if (IS_WINDOWS) {
                 // on Windows, test for valid extension
-                const upperExt = external_path_.extname(filePath).toUpperCase();
+                const upperExt = external_path_namespaceObject.extname(filePath).toUpperCase();
                 if (extensions.some(validExt => validExt.toUpperCase() === upperExt)) {
                     return filePath;
                 }
@@ -78013,11 +78005,11 @@ function tryGetExecutablePath(filePath, extensions) {
                 if (IS_WINDOWS) {
                     // preserve the case of the actual file (since an extension was appended)
                     try {
-                        const directory = external_path_.dirname(filePath);
-                        const upperName = external_path_.basename(filePath).toUpperCase();
+                        const directory = external_path_namespaceObject.dirname(filePath);
+                        const upperName = external_path_namespaceObject.basename(filePath).toUpperCase();
                         for (const actualName of yield readdir(directory)) {
                             if (upperName === actualName.toUpperCase()) {
-                                filePath = external_path_.join(directory, actualName);
+                                filePath = external_path_namespaceObject.join(directory, actualName);
                                 break;
                             }
                         }
@@ -78237,7 +78229,7 @@ function findInPath(tool) {
         // build the list of extensions to try
         const extensions = [];
         if (IS_WINDOWS && process.env['PATHEXT']) {
-            for (const extension of process.env['PATHEXT'].split(external_path_.delimiter)) {
+            for (const extension of process.env['PATHEXT'].split(external_path_namespaceObject.delimiter)) {
                 if (extension) {
                     extensions.push(extension);
                 }
@@ -78252,7 +78244,7 @@ function findInPath(tool) {
             return [];
         }
         // if any path separators, return empty
-        if (tool.includes(external_path_.sep)) {
+        if (tool.includes(external_path_namespaceObject.sep)) {
             return [];
         }
         // build the list of directories
@@ -78263,7 +78255,7 @@ function findInPath(tool) {
         // across platforms.
         const directories = [];
         if (process.env.PATH) {
-            for (const p of process.env.PATH.split(external_path_.delimiter)) {
+            for (const p of process.env.PATH.split(external_path_namespaceObject.delimiter)) {
                 if (p) {
                     directories.push(p);
                 }
@@ -78272,7 +78264,7 @@ function findInPath(tool) {
         // find all matches
         const matches = [];
         for (const directory of directories) {
-            const filePath = yield tryGetExecutablePath(external_path_.join(directory, tool), extensions);
+            const filePath = yield tryGetExecutablePath(external_path_namespaceObject.join(directory, tool), extensions);
             if (filePath) {
                 matches.push(filePath);
             }
@@ -78703,7 +78695,7 @@ class ToolRunner extends external_events_.EventEmitter {
                 (this.toolPath.includes('/') ||
                     (toolrunner_IS_WINDOWS && this.toolPath.includes('\\')))) {
                 // prefer options.cwd if it is specified, however options.cwd may also need to be rooted
-                this.toolPath = external_path_.resolve(process.cwd(), this.options.cwd || process.cwd(), this.toolPath);
+                this.toolPath = external_path_namespaceObject.resolve(process.cwd(), this.options.cwd || process.cwd(), this.toolPath);
             }
             // if the tool is only a file name, then resolve it from the PATH
             // otherwise verify it exists (add extension on Windows if necessary)
@@ -83978,7 +83970,7 @@ const safeJSON = (text) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 //# sourceMappingURL=sleep.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/version.mjs
-const api_version_VERSION = '0.37.2'; // x-release-please-version
+const api_version_VERSION = '0.46.11'; // x-release-please-version
 //# sourceMappingURL=version.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/detect-platform.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
@@ -85181,6 +85173,44 @@ class AndroidInstances extends APIResource {
     }
 }
 //# sourceMappingURL=android-instances.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/gradle-instances.mjs
+// Hand-written following the Stainless resource pattern; a future generation
+// from the OpenAPI spec reconciles with this file.
+
+
+
+
+class GradleInstances extends APIResource {
+    /**
+     * Create a gradle instance
+     */
+    create(params, options) {
+        const { reuseIfExists, wait, ...body } = params;
+        return this._client.post('/v1/gradle_instances', { query: { reuseIfExists, wait }, body, ...options });
+    }
+    /**
+     * List gradle instances
+     */
+    list(query = {}, options) {
+        return this._client.getAPIList('/v1/gradle_instances', (Items), { query, ...options });
+    }
+    /**
+     * Delete gradle instance with given name
+     */
+    delete(id, options) {
+        return this._client.delete(path_path `/v1/gradle_instances/${id}`, {
+            ...options,
+            headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
+        });
+    }
+    /**
+     * Get gradle instance with given ID
+     */
+    get(id, options) {
+        return this._client.get(path_path `/v1/gradle_instances/${id}`, options);
+    }
+}
+//# sourceMappingURL=gradle-instances.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/ios-instances.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
@@ -85218,6 +85248,21 @@ class IosInstances extends APIResource {
     }
 }
 //# sourceMappingURL=ios-instances.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/scoped-tokens.mjs
+// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+class ScopedTokens extends APIResource {
+    /**
+     * Mint a short-lived scoped token whose scopes limit what the holder can do, e.g.
+     * install a specific asset on a device through the registry. The token is verified
+     * offline by services holding the token signing public key and cannot be revoked,
+     * so keep TTLs short. It is bound to the authenticated caller's organization.
+     */
+    create(body, options) {
+        return this._client.post('/v1/scoped_tokens', { body, ...options });
+    }
+}
+//# sourceMappingURL=scoped-tokens.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/assets.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
@@ -85264,13 +85309,41 @@ class assets_Assets extends APIResource {
 
 
 
+/**
+ * Body init for the signed-URL PUT. Without a progress callback the buffer is sent
+ * directly and fetch derives Content-Length from it. With one, the buffer is wrapped
+ * in a ReadableStream so the callback can fire as chunks are pulled onto the socket;
+ * the explicit Content-Length header set by the caller keeps the request non-chunked,
+ * which signed URLs require.
+ */
+function uploadBodyInit(data, onProgress) {
+    if (!onProgress) {
+        return { body: data };
+    }
+    const chunkSize = 256 * 1024;
+    let sent = 0;
+    const stream = new ReadableStream({
+        pull(controller) {
+            if (sent >= data.length) {
+                controller.close();
+                return;
+            }
+            const chunk = data.subarray(sent, Math.min(sent + chunkSize, data.length));
+            sent += chunk.length;
+            controller.enqueue(chunk);
+            onProgress(sent, data.length);
+        },
+    });
+    return { body: stream, duplex: 'half' };
+}
 class Assets extends assets_Assets {
     async getOrUpload(body, options) {
         const creationResponse = await this.getOrCreate({
-            name: body.name ?? (0,external_path_.basename)(body.path),
+            name: body.name ?? (0,external_path_namespaceObject.basename)(body.path),
             kind: body.kind ?? 'App',
             ...(body.platform && { platform: body.platform }),
             ...(body.ttl && { ttl: body.ttl }),
+            ...body.uploadOptions,
         }, options);
         const data = await external_fs_.promises.readFile(body.path);
         const md5 = (0,external_crypto_.createHash)('md5').update(data).digest('hex');
@@ -85285,13 +85358,17 @@ class Assets extends assets_Assets {
                 ...(creationResponse.expiresAt && { expiresAt: creationResponse.expiresAt }),
             };
         }
+        // Content-Length is set manually only for the streamed body; for the buffered
+        // body fetch computes it itself, and setting it too makes Node 22's built-in
+        // fetch send a duplicate that the npm undici proxy dispatcher rejects with
+        // "invalid content-length header" whenever HTTP(S)_PROXY is set.
         const uploadResponse = await proxy_transport_nodeProxyTransport.fetch(creationResponse.signedUploadUrl, {
             headers: {
-                'Content-Length': data.length.toString(),
+                ...(body.onUploadProgress && { 'Content-Length': data.length.toString() }),
                 'Content-Type': 'application/octet-stream',
             },
             method: 'PUT',
-            body: data,
+            ...uploadBodyInit(data, body.onUploadProgress),
         });
         if (uploadResponse.status !== 200) {
             throw new Error(`Failed to upload asset: ${uploadResponse.status} ${await uploadResponse.text()}`);
@@ -85356,6 +85433,193 @@ const OPEN = node/* OPEN */.vP;
 const createEventSource = node/* createEventSource */.iv;
 
 
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/xcode-cache.mjs
+
+
+/**
+ * The instance was gone before it said anything about its cache, so there is no last state to
+ * summarise. Distinct from a follow that ends with `gone: true`, which at least saw one.
+ */
+class XcodeCacheGoneError extends Error {
+    constructor(instanceId) {
+        super(`Instance ${instanceId} was gone before it reported any cache status`);
+        this.instanceId = instanceId;
+        this.name = 'XcodeCacheGoneError';
+    }
+}
+class XcodeCacheTimeoutError extends Error {
+    constructor(side, timeoutMs, cache) {
+        super(`Timed out after ${Math.round(timeoutMs / 1000)}s waiting for the cache ${side} to finish` +
+            (cache ? ` (last phase: ${cache[side].phase})` : ''));
+        this.side = side;
+        this.timeoutMs = timeoutMs;
+        this.cache = cache;
+        this.name = 'XcodeCacheTimeoutError';
+    }
+}
+const DEFAULT_TIMEOUT_MS = {
+    restore: 20 * 60 * 1000,
+    save: 12 * 60 * 1000,
+};
+/** Phases past which nothing more will happen. */
+function isRestoreTerminal(phase) {
+    return (phase === 'disabled' ||
+        phase === 'unsupported' ||
+        phase === 'restored' ||
+        phase === 'skipped' ||
+        phase === 'failed');
+}
+/**
+ * Separates the one outcome worth reacting to from the terminal phases that just mean "cold,
+ * carry on". A caller that created an instance for a warm workspace deletes it on a failure,
+ * but a fallback to a cold build leaves a perfectly usable instance behind.
+ */
+function isRestoreFailure(phase) {
+    return phase === 'failed';
+}
+function isSaveTerminal(phase) {
+    return (phase === 'disabled' ||
+        phase === 'published' ||
+        phase === 'skipped' ||
+        phase === 'failed' ||
+        phase === 'timed_out');
+}
+function isCacheTerminal(cache, side) {
+    return side === 'restore' ? isRestoreTerminal(cache.restore.phase) : isSaveTerminal(cache.save.phase);
+}
+/**
+ * Follows an instance's cache status until the chosen side reaches a terminal phase, the
+ * instance is collected, or the wait times out.
+ *
+ * The transport is the same endpoint that serves a JSON snapshot, asked for as an event
+ * stream. The server emits on phase change only, so every callback is a real transition.
+ */
+function followXcodeCache(target, options = {}) {
+    const side = options.side ?? 'restore';
+    const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS[side];
+    let base = target.baseURL;
+    while (base.endsWith('/'))
+        base = base.slice(0, -1);
+    const url = `${base}/v1/xcode_instances/${encodeURIComponent(target.instanceId)}/cache`;
+    return new Promise((resolve, reject) => {
+        let last;
+        let lastKey = '';
+        let settled = false;
+        const finish = (fn) => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            options.signal?.removeEventListener('abort', onAbort);
+            try {
+                source.close();
+            }
+            catch {
+                // A stream that never opened has nothing to close.
+            }
+            fn();
+        };
+        const timer = setTimeout(() => finish(() => reject(new XcodeCacheTimeoutError(side, timeoutMs, last))), timeoutMs);
+        const onAbort = () => finish(() => reject(options.signal?.reason ?? new Error('aborted')));
+        let confirming = false;
+        const confirmGone = () => {
+            if (confirming || settled)
+                return;
+            confirming = true;
+            proxy_transport_nodeProxyTransport
+                .fetch(url, {
+                headers: { Authorization: `Bearer ${target.apiKey}`, Accept: 'application/json' },
+            })
+                .then(async (res) => {
+                confirming = false;
+                if (res.status !== 404) {
+                    await res.text().catch(() => undefined);
+                    return;
+                }
+                finish(() => last ? resolve({ cache: last, gone: true }) : reject(new XcodeCacheGoneError(target.instanceId)));
+            })
+                .catch(() => {
+                confirming = false;
+            });
+        };
+        // The endpoint answers from the region, which keeps the instance while it terminates and
+        // drops it once it is collected, so a 404 is the instance being over rather than a fault.
+        // Without this the client treats it as a connection to retry and follows a gone instance
+        // until the timeout, which is minutes of a command that looks hung and says nothing.
+        const fetchOrGone = async (input, init) => {
+            const res = await proxy_transport_nodeProxyTransport.fetch(input, init);
+            if (res.status === 404) {
+                finish(() => last ? resolve({ cache: last, gone: true }) : reject(new XcodeCacheGoneError(target.instanceId)));
+            }
+            return res;
+        };
+        const source = createEventSource({
+            url,
+            fetch: fetchOrGone,
+            onConnect: () => options.onOpen?.(),
+            headers: {
+                Authorization: `Bearer ${target.apiKey}`,
+                Accept: 'text/event-stream',
+            },
+            onMessage: (message) => {
+                if (message.event !== 'cache' && message.event !== 'gone')
+                    return;
+                let cache;
+                try {
+                    cache = JSON.parse(typeof message.data === 'string' ? message.data : String(message.data));
+                }
+                catch (err) {
+                    finish(() => reject(new Error(`Cache stream sent unreadable data: ${err}`)));
+                    return;
+                }
+                last = cache;
+                if (message.event === 'gone') {
+                    // The server also ends the stream this way when its own watch is cut short, which
+                    // Kubernetes does routinely on a long one, so a snapshot decides which it was. The
+                    // client library reconnects on its own when the instance is in fact still there.
+                    confirmGone();
+                    return;
+                }
+                // A reconnect replays the current state, which is not a transition.
+                const key = `${cache.restore.phase}/${cache.restore.reason ?? ''}|${cache.save.phase}/${cache.save.reason ?? ''}`;
+                if (key !== lastKey) {
+                    lastKey = key;
+                    options.onUpdate?.(cache);
+                }
+                if (isCacheTerminal(cache, side)) {
+                    finish(() => resolve({ cache, gone: false }));
+                }
+            },
+        });
+        if (options.signal?.aborted) {
+            onAbort();
+            return;
+        }
+        options.signal?.addEventListener('abort', onAbort, { once: true });
+    });
+}
+//# sourceMappingURL=xcode-cache.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/sse-fetch.mjs
+/**
+ * Wraps a fetch for use with eventsource-client, which swallows a REJECTED
+ * fetch (connection refused, instance gone) into a silent reconnect loop
+ * without ever calling onDisconnect. The wrapper reports the rejection so the
+ * caller can settle its promise instead of hanging while the client
+ * reconnect-loops. exec-client has the same latent hazard and should adopt
+ * this when touched next.
+ */
+function sseFetch(fetchImpl, onRejected) {
+    return async (input, init) => {
+        try {
+            return await fetchImpl(input, init);
+        }
+        catch (err) {
+            onRejected(err);
+            throw err;
+        }
+    };
+}
+//# sourceMappingURL=sse-fetch.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/exec-client.mjs
 /**
  * Client for executing commands on limbuild server with streaming output.
@@ -85365,11 +85629,37 @@ const createEventSource = node/* createEventSource */.iv;
  */
 
 
+
+/**
+ * Give-up policy for the exec event stream. The EventSource reconnects
+ * forever on its own, so a dead exec (deleted instance, expired record)
+ * would otherwise retry until the one-hour completion timeout. Proof of
+ * life resets the clock: a delivered event, or a clean connection that
+ * stays open healthyConnectionMs (long compiles stream nothing for
+ * minutes while intermediaries kill idle connections). The window is
+ * wide enough to ride out real transient outages (an ingress redeploy, a
+ * VPN reconnect); tightening it trades outage tolerance for faster
+ * dead-exec detection. It is measured in time, not attempts: the server
+ * steers the retry delay through SSE `retry:` frames, so an attempt
+ * count would put the give-up horizon under remote control.
+ *
+ * @internal Mutable for tests only.
+ */
+const sseStreamPolicy = {
+    healthyConnectionMs: 15000,
+    giveUpAfterMs: 300000,
+};
+/** The event stream kept failing past the give-up window; remote state unknown. */
+class ExecStreamLostError extends Error {
+}
+/** The server closed the event stream for good (HTTP 204). */
+class ExecStreamClosedError extends Error {
+}
 /**
  * A Readable-like stream interface, similar to Node.js stream.Readable.
  * Emits 'data' for each chunk and 'close' when the stream ends.
  */
-class src_ReadableStream {
+class exec_client_ReadableStream {
     constructor() {
         this.dataListeners = [];
         this.closeListeners = [];
@@ -85415,23 +85705,39 @@ class src_ReadableStream {
 class ExecChildProcess {
     constructor(request, options) {
         /** Command stream - emits the executed command and then closes */
-        this.command = new src_ReadableStream();
+        this.command = new exec_client_ReadableStream();
         /** Stdout stream - emits 'data' and 'close' events */
-        this.stdout = new src_ReadableStream();
+        this.stdout = new exec_client_ReadableStream();
         /** Stderr stream - emits 'data' and 'close' events */
-        this.stderr = new src_ReadableStream();
+        this.stderr = new exec_client_ReadableStream();
         this.exitListeners = [];
         this.abortController = new AbortController();
         this.sseConnection = null;
         this.killed = false;
+        // Start of the stream's current unbroken failure streak, 0 while
+        // healthy. run() reads it to classify a completion timeout that
+        // expired while the stream was already dead.
+        this.streamDeadSince = 0;
+        this.detached = false;
+        this.appStoreEvent = null;
+        this.playstoreEvent = null;
         this.options = options;
         this.log = options.log ?? (() => { });
+        this.startedPromise = new Promise((resolve, reject) => {
+            this.resolveStarted = resolve;
+            this.rejectStarted = reject;
+        });
+        // Most callers await the terminal result and never call detach(); keep the
+        // dormant startup promise from becoming an unhandled rejection for them.
+        void this.startedPromise.catch(() => { });
         if (request instanceof Promise) {
             this.resultPromise = request.then((r) => this.run(r));
         }
         else {
             this.resultPromise = this.run(request);
         }
+        // Fail detach() as well when request preparation or POST /exec fails.
+        void this.resultPromise.catch((err) => this.rejectStarted(err));
     }
     /** Implement PromiseLike so this object can be awaited */
     then(onfulfilled, onrejected) {
@@ -85452,6 +85758,20 @@ class ExecChildProcess {
         }
         return this;
     }
+    /**
+     * Return once the remote execution has been accepted, without opening its
+     * event stream or waiting for completion. Call immediately after creating
+     * the process. The remote execution keeps running; use a build-finish
+     * webhook or the build-log APIs to observe its terminal result.
+     */
+    detach() {
+        this.detached = true;
+        // The caller observes startup failures through startedPromise. Mark the
+        // completion promise handled because detached callers intentionally never
+        // await it.
+        void this.resultPromise.catch(() => { });
+        return this.startedPromise;
+    }
     /** Send a signal to terminate the process */
     async kill() {
         this.killed = true;
@@ -85461,7 +85781,7 @@ class ExecChildProcess {
             this.sseConnection = null;
         }
         if (!this.execId) {
-            this.log('warn', 'Failed to cancel build: execId is not set');
+            this.log('warn', 'Failed to cancel execution: execId is not set');
             return;
         }
         try {
@@ -85471,16 +85791,25 @@ class ExecChildProcess {
                     Authorization: `Bearer ${this.options.token}`,
                 },
             });
-            this.log('info', 'Build cancelled');
+            this.log('info', 'Execution cancelled');
         }
         catch (err) {
-            this.log('warn', `Failed to cancel build: ${err}`);
+            this.log('warn', `Failed to cancel execution: ${err}`);
         }
     }
     async run(request) {
         const { log } = this;
         const { apiUrl, token } = this.options;
-        // 1. Trigger the build via POST /exec
+        // 1. Trigger the build via POST /exec.
+        // additionalMetadata is a client-only carrier (no daemon reads it; it is
+        // spread into ExecResult below so callers can surface the download URL), so
+        // it is stripped from the wire body: the daemon OpenAPI schemas do not
+        // declare it, and sending it would 400 under strict request validation.
+        // The 'run' command has no artifact upload and never carries it.
+        const wireRequest = { ...request };
+        if ('additionalMetadata' in wireRequest) {
+            delete wireRequest.additionalMetadata;
+        }
         let execRes;
         try {
             execRes = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/exec`, {
@@ -85489,12 +85818,13 @@ class ExecChildProcess {
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${token}`,
                 },
-                body: JSON.stringify(request),
+                body: JSON.stringify(wireRequest),
                 signal: this.abortController.signal,
             });
         }
         catch (err) {
             if (this.killed) {
+                this.rejectStarted(new Error('Execution cancelled before it started'));
                 this.command.emit('close');
                 this.stdout.emit('close');
                 this.stderr.emit('close');
@@ -85507,32 +85837,82 @@ class ExecChildProcess {
         }
         if (!execRes.ok) {
             const text = await execRes.text();
-            throw new Error(`exec failed: ${execRes.status} ${text}`);
+            let message = text;
+            try {
+                // The daemon returns an APIError JSON body; surface its message
+                // instead of the raw escaped JSON.
+                message = JSON.parse(text).message || text;
+            }
+            catch {
+                // Not JSON; keep the raw body.
+            }
+            throw new Error(`exec failed: ${execRes.status} ${message}`);
         }
         const execData = (await execRes.json());
         this.execId = execData.execId;
-        log('debug', `Build started: ${this.execId}`);
+        log('debug', `Execution started: ${this.execId}`);
+        this.resolveStarted(this.execId);
+        if (this.detached) {
+            // An unresolved promise holds no Node.js event-loop resources. Keeping
+            // the terminal result pending accurately reflects that this client
+            // deliberately stopped observing the remote execution.
+            this.command.emit('close');
+            this.stdout.emit('close');
+            this.stderr.emit('close');
+            return new Promise(() => { });
+        }
         // 2. Stream logs via SSE and wait for exit code
         const eventsUrl = `${apiUrl}/exec/${this.execId}/events`;
-        const timeoutMs = 3600 * 1000; // 1 hour max
+        // 1 hour max for the build itself; a TestFlight request extends the
+        // budget by its server-side verdict watch plus upload headroom so a long
+        // build is not force-failed client-side while the server still succeeds.
+        let timeoutMs = 3600 * 1000;
+        if (request.command === 'xcodebuild' && request.testflight) {
+            timeoutMs += (Math.max(0, request.testflight.waitTimeoutSeconds ?? 0) + 900) * 1000;
+        }
+        else if (request.command === 'run') {
+            timeoutMs = (Math.max(1, request.timeoutSeconds ?? 3600) + 60) * 1000;
+        }
         let exitCode;
+        let timedOut = false;
+        let incomplete;
         let timeoutId;
         try {
             exitCode = await Promise.race([
                 this.connectSSE(eventsUrl),
                 new Promise((_, reject) => {
-                    timeoutId = setTimeout(() => reject(new Error('SSE timeout')), timeoutMs);
+                    timeoutId = setTimeout(() => reject(new Error('SSE completion timeout')), timeoutMs);
                 }),
             ]);
         }
-        catch {
+        catch (err) {
             if (this.killed) {
-                log('debug', 'Build killed');
+                log('debug', 'Execution killed');
                 exitCode = -1;
             }
             else {
-                log('warn', 'SSE completion timeout');
+                // The client stopped waiting; the fabricated exit code must not
+                // read as a build failure. The structured reason lets callers give
+                // the right advice: a dead stream means the execution may be gone,
+                // while a genuine timeout means it may still be running. A budget
+                // that expires mid-failure-streak (short run timeouts undercut the
+                // stream's own give-up window) counts as a stream problem too.
+                let message = err instanceof Error ? err.message : String(err);
+                const streakMs = this.streamDeadSince > 0 ? Date.now() - this.streamDeadSince : 0;
+                let reason = err instanceof ExecStreamClosedError ? 'stream-closed'
+                    : err instanceof ExecStreamLostError ? 'stream-lost'
+                        : 'timeout';
+                if (reason === 'timeout' && streakMs > 0) {
+                    reason = 'stream-lost';
+                    message =
+                        `the completion budget expired while the event stream had already been failing ` +
+                            `for ${Math.round(streakMs / 1000)}s; the execution may no longer exist ` +
+                            `(instance deleted or record expired)`;
+                }
+                incomplete = { reason, message };
+                log('warn', message);
                 exitCode = 1;
+                timedOut = true;
             }
         }
         finally {
@@ -85558,66 +85938,188 @@ class ExecChildProcess {
             exitCode,
             execId: this.execId,
             status,
-            ...(request.additionalMetadata ?? {}),
+            ...('additionalMetadata' in request ? request.additionalMetadata ?? {} : {}),
+            ...(this.appStoreEvent ? { appstore: this.appStoreEvent } : {}),
+            ...(this.playstoreEvent ? { playstore: this.playstoreEvent } : {}),
+            ...(timedOut ? { timedOut } : {}),
+            ...(incomplete ? { incomplete } : {}),
         };
-        this.log('debug', `Build finished: ${result.status} (exit ${result.exitCode})`);
+        this.log('debug', `Execution finished: ${result.status} (exit ${result.exitCode})`);
         return result;
     }
     /**
      * Opens an SSE connection and routes streamed events to the exposed command/stdout/stderr streams.
      * Resolves with the exit code when an 'exitCode' event arrives.
-     * Rejects when the abort signal fires (kill or cleanup).
+     * Rejects when the abort signal fires (kill or cleanup), when the server
+     * closes the stream for good, or when the give-up clock runs out.
      */
     connectSSE(eventsUrl) {
         return new Promise((resolve, reject) => {
-            if (this.abortController.signal.aborted) {
+            const signal = this.abortController.signal;
+            if (signal.aborted) {
                 reject(new Error('killed'));
                 return;
             }
-            try {
-                const eventSource = createEventSource({
-                    url: eventsUrl,
-                    fetch: proxy_transport_nodeProxyTransport.fetch,
-                    headers: { Authorization: `Bearer ${this.options.token}` },
-                    onMessage: (message) => {
-                        const data = typeof message.data === 'string' ? message.data : String(message.data ?? '');
-                        const eventType = message.event;
-                        if (eventType === 'command') {
-                            this.command.emit('data', data);
-                        }
-                        else if (eventType === 'stdout') {
-                            this.stdout.emit('data', data);
-                        }
-                        else if (eventType === 'stderr') {
-                            this.stderr.emit('data', data);
-                        }
-                        else if (eventType === 'exitCode') {
-                            const exitCode = parseInt(data, 10);
-                            if (Number.isNaN(exitCode)) {
-                                this.log('warn', `SSE exitCode event has invalid data: ${data}`);
-                                return;
-                            }
-                            this.log('debug', `Build completed via SSE: exitCode=${exitCode}`);
-                            resolve(exitCode);
-                        }
-                    },
-                    onDisconnect: () => {
-                        if (!this.killed) {
-                            this.log('warn', 'SSE disconnected');
-                        }
-                    },
-                });
-                this.sseConnection = eventSource;
-                this.abortController.signal.addEventListener('abort', () => reject(new Error('killed')), {
-                    once: true,
-                });
-            }
-            catch (err) {
-                if (!this.killed) {
-                    this.log('warn', `SSE setup failed: ${err}`);
+            // Settle-once pair. Both paths close the source: the EventSource
+            // reconnects on its own otherwise, even after the promise is done.
+            let settled = false;
+            let connectedAt = 0;
+            let lastCycleAt = 0;
+            let lastCycleMono = 0;
+            let proofOfLifeThisCycle = false;
+            let cleanResponseThisCycle = false;
+            let lastStreamError;
+            const cleanup = () => {
+                eventSource.close();
+                signal.removeEventListener('abort', onAbort);
+            };
+            const succeed = (exitCode) => {
+                if (settled)
+                    return;
+                settled = true;
+                cleanup();
+                resolve(exitCode);
+            };
+            const fail = (error) => {
+                if (settled)
+                    return;
+                settled = true;
+                cleanup();
+                reject(error);
+            };
+            const onAbort = () => fail(new Error('killed'));
+            // Stream health is judged at the fetch surface, where the response
+            // status is visible; the library fires onConnect for error responses
+            // too, so an error page held open must not read as a healthy
+            // connection. An HTTP 204 makes the EventSource close for good
+            // without reporting anything, so it must fail here. A rejected fetch
+            // never reaches onDisconnect (the hazard sseFetch exists for):
+            // capture it for the give-up message and let the clock decide, so
+            // one transient refusal does not kill a live build.
+            const fetchWithStreamPolicy = async (input, init) => {
+                const response = await proxy_transport_nodeProxyTransport.fetch(input, init);
+                if (response.status === 204) {
+                    fail(new ExecStreamClosedError(`event stream to ${eventsUrl} was closed by the server (HTTP 204)`));
                 }
-                reject(err);
-            }
+                else if (!response.ok) {
+                    lastStreamError = new Error(`server answered HTTP ${response.status}`);
+                }
+                cleanResponseThisCycle = response.ok;
+                return response;
+            };
+            const eventSource = createEventSource({
+                url: eventsUrl,
+                fetch: sseFetch(fetchWithStreamPolicy, (err) => {
+                    lastStreamError = err instanceof Error ? err : new Error(String(err));
+                }),
+                headers: { Authorization: `Bearer ${this.options.token}` },
+                onConnect: () => {
+                    connectedAt = Date.now();
+                },
+                // Comments count as proof of life, so a server-side keepalive
+                // works without a client change (onMessage never sees them).
+                onComment: () => {
+                    proofOfLifeThisCycle = true;
+                },
+                // Fires once per broken cycle, before the retry timer is armed, on
+                // both failure paths (request rejected, stream ended). This is
+                // where the give-up clock runs.
+                onScheduleReconnect: () => {
+                    if (settled || this.killed) {
+                        return;
+                    }
+                    const now = Date.now();
+                    const mono = performance.now();
+                    const livedMs = connectedAt > 0 ? now - connectedAt : 0;
+                    connectedAt = 0;
+                    // Date.now() is wall clock: a laptop waking from sleep (or a
+                    // clock step) would arrive with the whole window already
+                    // "elapsed" and fail on its first attempt. Sleep is the wall
+                    // clock advancing while the monotonic clock stands still; a
+                    // large drift between the two restarts the streak. Long server
+                    // retry delays and hanging connects advance both clocks equally
+                    // and keep counting.
+                    if (this.streamDeadSince > 0 && lastCycleAt > 0) {
+                        const wallGapMs = now - lastCycleAt;
+                        const monoGapMs = mono - lastCycleMono;
+                        if (wallGapMs - monoGapMs > 30000) {
+                            this.streamDeadSince = now;
+                        }
+                    }
+                    lastCycleAt = now;
+                    lastCycleMono = mono;
+                    const healthy = proofOfLifeThisCycle ||
+                        (cleanResponseThisCycle && livedMs >= sseStreamPolicy.healthyConnectionMs);
+                    proofOfLifeThisCycle = false;
+                    cleanResponseThisCycle = false;
+                    if (healthy) {
+                        this.streamDeadSince = 0;
+                        lastStreamError = undefined;
+                        return;
+                    }
+                    if (this.streamDeadSince === 0) {
+                        this.streamDeadSince = now;
+                        this.log('warn', 'SSE disconnected; reconnecting');
+                        return;
+                    }
+                    if (now - this.streamDeadSince >= sseStreamPolicy.giveUpAfterMs) {
+                        const seconds = Math.round((now - this.streamDeadSince) / 1000);
+                        const cause = lastStreamError ? `; last error: ${lastStreamError.message}` : '';
+                        fail(new ExecStreamLostError(`event stream to ${eventsUrl} kept failing for ${seconds}s without delivering events${cause}; ` +
+                            'the execution may no longer exist (instance deleted or record expired)'));
+                    }
+                },
+                onMessage: (message) => {
+                    this.streamDeadSince = 0;
+                    proofOfLifeThisCycle = true;
+                    lastStreamError = undefined;
+                    const data = typeof message.data === 'string' ? message.data : String(message.data ?? '');
+                    const eventType = message.event;
+                    if (eventType === 'command') {
+                        this.command.emit('data', data);
+                    }
+                    else if (eventType === 'stdout') {
+                        this.stdout.emit('data', data);
+                    }
+                    else if (eventType === 'stderr') {
+                        this.stderr.emit('data', data);
+                    }
+                    else if (eventType === 'testflight') {
+                        try {
+                            this.appStoreEvent = JSON.parse(data);
+                        }
+                        catch {
+                            // The wire event itself proves the server ran the App Store upload,
+                            // so never let a payload glitch look like a missing feature.
+                            this.appStoreEvent = { state: 'unknown' };
+                            this.log('warn', `SSE testflight event has invalid data: ${data}`);
+                        }
+                    }
+                    else if (eventType === 'playstore') {
+                        try {
+                            this.playstoreEvent = JSON.parse(data);
+                        }
+                        catch {
+                            // Same contract as the App Store upload event: its presence proves the server
+                            // ran the Play Store step, so a payload glitch must not
+                            // read as a missing feature.
+                            this.playstoreEvent = { state: 'unknown' };
+                            this.log('warn', `SSE playstore event has invalid data: ${data}`);
+                        }
+                    }
+                    else if (eventType === 'exitCode') {
+                        const exitCode = parseInt(data, 10);
+                        if (Number.isNaN(exitCode)) {
+                            this.log('warn', `SSE exitCode event has invalid data: ${data}`);
+                            return;
+                        }
+                        this.log('debug', `Execution completed via SSE: exitCode=${exitCode}`);
+                        succeed(exitCode);
+                    }
+                },
+            });
+            this.sseConnection = eventSource;
+            signal.addEventListener('abort', onAbort, { once: true });
         });
     }
 }
@@ -85646,31 +86148,24 @@ function exec_client_exec(request, options) {
 const folder_sync_watcher_noopLogger = (_level, _msg) => { };
 /**
  * Watch a folder tree for changes. Uses recursive watch when supported (macOS),
- * otherwise falls back to watching each directory. Debounced.
+ * otherwise falls back to watching each directory.
  *
  * Returns a handle that can be closed to stop watching.
  */
 async function watchFolderTree(opts) {
     const log = opts.log ?? folder_sync_watcher_noopLogger;
-    const debounceMs = 500;
     const rootPath = opts.rootPath;
     if (!external_fs_.existsSync(rootPath)) {
         throw new Error(`watchFolderTree root does not exist: ${rootPath}`);
     }
-    let timer;
-    const schedule = (reason) => {
-        if (timer)
-            clearTimeout(timer);
-        timer = setTimeout(() => opts.onChange(reason), debounceMs);
-    };
     const watcher = external_fs_.watch(rootPath, { recursive: true }, (_eventType, filename) => {
         if (!filename)
             return;
-        const relativePath = filename.split(external_path_.sep).join('/');
+        const relativePath = filename.split(external_path_namespaceObject.sep).join('/');
         if (opts.ignoreFn(relativePath)) {
             return;
         }
-        schedule(relativePath ? `change:${relativePath}` : 'change');
+        opts.onChange(relativePath ? `change:${relativePath}` : 'change');
     });
     log('debug', `watchFolderTree(recursive): ${rootPath}`);
     return { close: () => watcher.close() };
@@ -85704,6 +86199,10 @@ function isDirectInstanceHttpError(err, status) {
 
 
 
+
+/** Full uploads at or above this size get an info-level notice so "sync is
+ * stuck" turns into "a GB-scale file is being uploaded". */
+const LARGE_UPLOAD_NOTICE_BYTES = 64 * 1024 * 1024;
 const folder_sync_noopLogger = (_level, _msg) => {
     // Intentionally empty: callers (e.g. ios-client.ts) should provide their own logger
     // to control verbosity and integrate with the SDK's logging setup.
@@ -85852,16 +86351,50 @@ async function sha256FileHex(filePath) {
         stream.on('end', () => resolve(hash.digest('hex')));
     });
 }
-async function walkFiles(root, ignoreFn) {
-    const rootResolved = external_path_.resolve(root);
+/**
+ * Validates a symlink's readlink target at sync time: it must be relative,
+ * backslash-free, and lexically resolve inside the sync root when joined
+ * with the link's directory (the daemon enforces the same policy on apply,
+ * so failing here is the same failure with a better message).
+ */
+function validateSymlinkTarget(rel, target) {
+    if (target.includes('\\')) {
+        throw new Error(`symlink ${rel} -> ${target} target contains a backslash, which the daemon rejects; ` +
+            'remove the link or pass --ignore to skip it');
+    }
+    const resolved = external_path_namespaceObject.posix.normalize(external_path_namespaceObject.posix.join(external_path_namespaceObject.posix.dirname(rel), target));
+    if (resolved === '.' || resolved === '..' || resolved.startsWith('../')) {
+        throw new Error(`symlink ${rel} -> ${target} points outside the sync root; ` +
+            'run the sync from the repo root that contains the target, remove the link, ' +
+            'or pass --ignore to skip it');
+    }
+}
+async function walkFiles(root, ignoreFn, syncSymlinks, log) {
+    const rootResolved = external_path_namespaceObject.resolve(root);
+    const rootStat = await external_fs_.promises.stat(rootResolved);
+    if (rootStat.isFile()) {
+        const rel = external_path_namespaceObject.basename(rootResolved);
+        if (ignoreFn(rel)) {
+            return [];
+        }
+        return [
+            {
+                path: rel,
+                size: rootStat.size,
+                sha256: await sha256FileHex(rootResolved),
+                absPath: rootResolved,
+                mode: rootStat.mode & 0o7777,
+            },
+        ];
+    }
     const out = [];
     const stack = [rootResolved];
     while (stack.length) {
         const dir = stack.pop();
         const entries = await external_fs_.promises.readdir(dir, { withFileTypes: true });
         for (const ent of entries) {
-            const abs = external_path_.join(dir, ent.name);
-            const rel = external_path_.relative(rootResolved, abs).split(external_path_.sep).join('/');
+            const abs = external_path_namespaceObject.join(dir, ent.name);
+            const rel = external_path_namespaceObject.relative(rootResolved, abs).split(external_path_namespaceObject.sep).join('/');
             if (ent.isDirectory()) {
                 // For directories, check with trailing slash
                 const relDir = rel + '/';
@@ -85869,6 +86402,38 @@ async function walkFiles(root, ignoreFn) {
                 if (ignoreFn(relDir))
                     continue;
                 stack.push(abs);
+                continue;
+            }
+            if (ent.isSymbolicLink()) {
+                if (!syncSymlinks)
+                    continue;
+                // Symlinks ship as link entries with the literal target: a
+                // symlinked directory arrives here too and is sent as a link, not
+                // traversed (git semantics). The target string is the content.
+                // Probe both forms: a symlink named e.g. `Pods` or `build` may point
+                // at a directory, so directory-only excludes (`Pods/`, `build/`)
+                // must match it and skip before validation rejects an out-of-root
+                // target.
+                if (ignoreFn(rel) || ignoreFn(rel + '/'))
+                    continue;
+                const target = (await external_fs_.promises.readlink(abs)).split(external_path_namespaceObject.sep).join('/');
+                // An absolute target can never resolve remotely and no sync root
+                // can contain it; skip it like pre-symlink clients did (with a
+                // warning) instead of failing a previously working sync.
+                if (external_path_namespaceObject.posix.isAbsolute(target) || external_path_namespaceObject.win32.isAbsolute(target)) {
+                    log?.('warn', `skipping symlink ${rel} -> ${target}: absolute targets cannot resolve remotely`);
+                    continue;
+                }
+                validateSymlinkTarget(rel, target);
+                const sha256 = external_crypto_.createHash('sha256').update(target).digest('hex');
+                out.push({
+                    path: rel,
+                    size: Buffer.byteLength(target),
+                    sha256,
+                    absPath: abs,
+                    mode: 0,
+                    linkTarget: target,
+                });
                 continue;
             }
             if (!ent.isFile())
@@ -85892,8 +86457,10 @@ async function collectAdditionalFiles(additionalFiles) {
     }
     const out = [];
     for (const additionalFile of additionalFiles) {
-        const remotePath = additionalFile.remotePath;
-        const absPath = external_path_.resolve(additionalFile.localPath);
+        // Canonicalize user-supplied remote paths ("./netrc" -> "netrc") so the
+        // manifest key matches what the daemon applies and echoes in needFull.
+        const remotePath = external_path_namespaceObject.posix.normalize(additionalFile.remotePath);
+        const absPath = external_path_namespaceObject.resolve(additionalFile.localPath);
         const st = await external_fs_.promises.stat(absPath);
         if (!st.isFile()) {
             throw new Error(`additional file localPath must be a file: ${additionalFile.localPath}`);
@@ -85910,99 +86477,232 @@ async function collectAdditionalFiles(additionalFiles) {
     out.sort((a, b) => a.path.localeCompare(b.path));
     return out;
 }
-let xdelta3WasmReady = null;
-async function loadXdelta3Wasm() {
-    if (!xdelta3WasmReady) {
-        xdelta3WasmReady = (async () => {
+let xdelta3StreamingReady = null;
+async function loadXdelta3Streaming() {
+    if (!xdelta3StreamingReady) {
+        xdelta3StreamingReady = (async () => {
             // Dynamic import so the WASM module is only loaded when sync is actually used.
             // Works in both CJS and ESM outputs emitted by tsc-multi.
-            const mod = (await __nccwpck_require__.e(/* import() */ 475).then(__nccwpck_require__.t.bind(__nccwpck_require__, 6475, 19)));
-            await mod.init();
-            return mod;
+            return (await __nccwpck_require__.e(/* import() */ 571).then(__nccwpck_require__.t.bind(__nccwpck_require__, 3571, 19)));
         })().catch((err) => {
             // Allow retry on a subsequent call if the first init failed.
-            xdelta3WasmReady = null;
+            xdelta3StreamingReady = null;
             throw err;
         });
     }
-    return await xdelta3WasmReady;
+    return await xdelta3StreamingReady;
+}
+async function* fileChunks(filePath) {
+    for await (const chunk of external_fs_.createReadStream(filePath, { highWaterMark: 1024 * 1024 })) {
+        if (chunk instanceof Uint8Array) {
+            yield chunk;
+        }
+        else {
+            yield Buffer.from(chunk);
+        }
+    }
+}
+const MIN_XDELTA_TARGET_BYTES = 64 * 1024;
+const WATCH_DEBOUNCE_MS = 500;
+function defaultMaxPatchBytes(targetSize) {
+    // Use the patch only when it is strictly smaller than 90% of the target file.
+    return Math.max(0, Math.ceil(targetSize * 0.9) - 1);
 }
 /**
  * Encode an xdelta3/VCDIFF patch for `target` relative to `basis` and write it
  * to `outPatch`. Returns the size of the resulting patch in bytes.
  *
  * If the encoder would produce a patch larger than `maxPatchBytes`, it short-
- * circuits with ENOSPC and this function returns -1 without writing a file, so
+ * circuits and this function returns -1 without writing a file, so
  * callers can fall back to a full upload cheaply.
  */
 async function encodeXdelta3Patch(basis, target, outPatch, maxPatchBytes) {
-    const wasm = await loadXdelta3Wasm();
-    const [basisBuf, targetBuf] = await Promise.all([
-        external_fs_.promises.readFile(basis),
-        external_fs_.promises.readFile(target),
-    ]);
-    const basisBytes = new Uint8Array(basisBuf.buffer, basisBuf.byteOffset, basisBuf.byteLength);
-    const targetBytes = new Uint8Array(targetBuf.buffer, targetBuf.byteOffset, targetBuf.byteLength);
-    const res = wasm.xd3_encode_memory(targetBytes, basisBytes, maxPatchBytes, wasm.xd3_smatch_cfg.DEFAULT);
-    if (res.ret === wasm.WASI_ERRNO.ENOSPC) {
+    const xdelta3 = await loadXdelta3Streaming();
+    const basisHandle = await external_fs_.promises.open(basis, 'r');
+    const basisSize = (await basisHandle.stat()).size;
+    const output = external_fs_.createWriteStream(outPatch);
+    let bytesWritten = 0;
+    let exceededLimit = false;
+    const source = {
+        size: basisSize,
+        read: async (offset, into) => {
+            const { bytesRead } = await basisHandle.read(into, 0, into.byteLength, offset);
+            return bytesRead;
+        },
+    };
+    try {
+        for await (const chunk of xdelta3.encode(fileChunks(target), source)) {
+            bytesWritten += chunk.byteLength;
+            if (bytesWritten > maxPatchBytes) {
+                exceededLimit = true;
+                break;
+            }
+            if (!output.write(chunk)) {
+                await (0,external_events_.once)(output, 'drain');
+            }
+        }
+        output.end();
+        await (0,external_events_.once)(output, 'finish');
+    }
+    catch (err) {
+        output.destroy();
+        await external_fs_.promises.rm(outPatch, { force: true });
+        throw err;
+    }
+    finally {
+        await basisHandle.close();
+    }
+    if (exceededLimit) {
+        await external_fs_.promises.rm(outPatch, { force: true });
         return -1;
     }
-    if (res.ret !== 0) {
-        throw new Error(`xdelta3 encode failed: ${res.str} (code=${res.ret})`);
-    }
-    await external_fs_.promises.writeFile(outPatch, res.output);
-    return res.output.byteLength;
+    return bytesWritten;
 }
-async function cachePut(cacheRoot, relPath, srcFile) {
-    const dst = external_path_.join(cacheRoot, relPath.split('/').join(external_path_.sep));
-    await external_fs_.promises.mkdir(external_path_.dirname(dst), { recursive: true });
+async function cachePut(cacheRoot, relPath, srcFile, linkTarget, checkedDirs) {
+    const segments = relPath.split('/');
+    const dst = external_path_namespaceObject.join(cacheRoot, segments.join(external_path_namespaceObject.sep));
+    // Remove any ancestor that is not a real directory before mkdir/write: a
+    // path that previously synced as a symlink (or a regular file that became
+    // a directory) leaves a stale cache inode, and writing children through a
+    // symlink would corrupt the link target's cached entries while mkdir over
+    // a file throws after the server already applied. Only relevant when
+    // symlink sync is on; the caller passes checkedDirs (which also memoizes
+    // ancestors already confirmed real, so the sorted walk skips shared
+    // prefixes) then and omits it otherwise to skip the sweep entirely.
+    if (checkedDirs) {
+        let ancestor = cacheRoot;
+        for (let i = 0; i < segments.length - 1; i++) {
+            ancestor = external_path_namespaceObject.join(ancestor, segments[i]);
+            if (checkedDirs.has(ancestor))
+                continue;
+            const ast = await external_fs_.promises.lstat(ancestor).catch(() => null);
+            if (ast && !ast.isDirectory()) {
+                await external_fs_.promises.rm(ancestor, { recursive: true, force: true });
+            }
+            else if (ast) {
+                checkedDirs.add(ancestor);
+            }
+        }
+    }
+    await external_fs_.promises.mkdir(external_path_namespaceObject.dirname(dst), { recursive: true });
+    // Replace the destination inode when its type doesn't match what we're
+    // writing: a stale symlink (copyFile would follow it) or a stale directory
+    // (copyFile onto a dir throws EISDIR) left by a since-changed path.
+    const st = await external_fs_.promises.lstat(dst).catch(() => null);
+    if (st && (st.isSymbolicLink() || st.isDirectory() || linkTarget !== undefined)) {
+        await external_fs_.promises.rm(dst, { recursive: true, force: true });
+    }
+    if (linkTarget !== undefined) {
+        await external_fs_.promises.symlink(linkTarget, dst);
+        return;
+    }
     await external_fs_.promises.copyFile(srcFile, dst);
 }
 function cacheGet(cacheRoot, relPath) {
-    return external_path_.join(cacheRoot, relPath.split('/').join(external_path_.sep));
+    return external_path_namespaceObject.join(cacheRoot, relPath.split('/').join(external_path_namespaceObject.sep));
 }
 async function folder_sync_syncFolder(localFolderPath, opts) {
     const log = (level, msg) => {
         (opts.log ?? folder_sync_noopLogger)(level, `syncFolder: ${msg}`);
     };
     log('debug', `setup ${localFolderPath} watch=${opts.watch} basisCacheDir=${opts.basisCacheDir}`);
-    if (!opts.watch) {
-        const result = await syncFolderOnce(localFolderPath, opts);
+    const syncOnce = async (reason) => {
+        const start = nowMs();
+        const result = await syncFolderOnce(localFolderPath, opts, reason);
+        opts.onSyncComplete?.({
+            bytesSent: result.bytesSent ?? 0,
+            durationMs: nowMs() - start,
+            ...(result.installedAppPath !== undefined ? { installedAppPath: result.installedAppPath } : {}),
+            ...(result.installedBundleId !== undefined ? { installedBundleId: result.installedBundleId } : {}),
+        });
         return result;
+    };
+    if (!opts.watch) {
+        return await syncOnce();
     }
     // Initial sync, then watch for changes and re-run sync in the background.
-    const first = await syncFolderOnce(localFolderPath, opts, 'startup');
+    const first = await syncOnce('startup');
     let inFlight = false;
     let queued = false;
+    let closed = false;
+    let debounceTimer;
+    let activeRun;
     const run = async (reason) => {
+        inFlight = true;
+        try {
+            await syncOnce(reason);
+        }
+        finally {
+            inFlight = false;
+            if (queued && !closed) {
+                queued = false;
+                startRun('queued-changes');
+            }
+        }
+    };
+    const startRun = (reason) => {
+        if (closed) {
+            return;
+        }
         if (inFlight) {
             queued = true;
             return;
         }
-        inFlight = true;
-        try {
-            await syncFolderOnce(localFolderPath, opts, reason);
-        }
-        finally {
-            inFlight = false;
-            if (queued) {
-                queued = false;
-                void run('queued-changes');
+        const promise = run(reason).catch((err) => {
+            log('error', `syncFolder: watch sync failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
+        activeRun = promise;
+        void promise.finally(() => {
+            if (activeRun === promise) {
+                activeRun = undefined;
             }
-        }
+        });
     };
-    const watcher = await watchFolderTree({
-        rootPath: localFolderPath,
-        log,
-        ignoreFn: opts.ignoreFn,
-        onChange: (reason) => {
-            void run(reason);
-        },
-    });
+    const schedule = (reason) => {
+        if (closed) {
+            return;
+        }
+        if (debounceTimer) {
+            clearTimeout(debounceTimer);
+        }
+        debounceTimer = setTimeout(() => {
+            debounceTimer = undefined;
+            startRun(reason);
+        }, WATCH_DEBOUNCE_MS);
+    };
+    const st = await external_fs_.promises.stat(localFolderPath);
+    let watcher;
+    if (st.isFile()) {
+        const watchedFile = external_path_namespaceObject.basename(localFolderPath);
+        const parent = external_path_namespaceObject.dirname(localFolderPath);
+        const fsWatcher = external_fs_.watch(parent, (_eventType, filename) => {
+            if (!filename || filename.toString() !== watchedFile)
+                return;
+            schedule(`change:${watchedFile}`);
+        });
+        watcher = { close: () => fsWatcher.close() };
+    }
+    else {
+        watcher = await watchFolderTree({
+            rootPath: localFolderPath,
+            log,
+            ignoreFn: opts.ignoreFn,
+            onChange: (reason) => {
+                schedule(reason);
+            },
+        });
+    }
     return {
         ...first,
-        stopWatching: () => {
+        stopWatching: async () => {
+            closed = true;
+            queued = false;
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+                debounceTimer = undefined;
+            }
             watcher.close();
+            await activeRun;
         },
     };
 }
@@ -86010,14 +86710,13 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
     const totalStart = nowMs();
     const log = opts.log ?? folder_sync_noopLogger;
     const slog = (level, msg) => log(level, `syncFolder: ${msg}`);
-    const maxPatchBytes = opts.maxPatchBytes ?? 4 * 1024 * 1024;
-    const files = await walkFiles(localFolderPath, opts.ignoreFn);
+    const files = await walkFiles(localFolderPath, opts.ignoreFn, opts.syncSymlinks ?? false, slog);
     const additionalFiles = await collectAdditionalFiles(opts.additionalFiles);
     const allFiles = [...files, ...additionalFiles].sort((a, b) => a.path.localeCompare(b.path));
     const fileMap = new Map(allFiles.map((f) => [f.path, f]));
     const syncId = genId('sync');
-    const rootName = external_path_.basename(external_path_.resolve(localFolderPath));
-    const preferredCompression = external_zlib_.createZstdCompress ? 'zstd' : 'gzip';
+    const rootName = external_path_namespaceObject.basename(external_path_namespaceObject.resolve(localFolderPath));
+    const preferredCompression = opts.compression ?? (external_zlib_.createZstdCompress ? 'zstd' : 'gzip');
     await external_fs_.promises.mkdir(opts.basisCacheDir, { recursive: true });
     // Track how many bytes we actually transmit to the server (single HTTP request).
     let bytesSentFull = 0;
@@ -86025,11 +86724,30 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
     let httpSendMsTotal = 0;
     let deltaEncodeMsTotal = 0;
     // Build payload list by comparing against local basis cache (single-flight/watch assumes server matches cache).
+    // lstat, never stat/existsSync: those follow symlinks and misreport a
+    // basis symlink (dangling or pointing at another cached file) as the
+    // file itself.
     const encodeLimit = concurrencyLimit();
     const changed = [];
     for (const f of allFiles) {
         const basisPath = cacheGet(opts.basisCacheDir, f.path);
-        if (!external_fs_.existsSync(basisPath)) {
+        const basisStat = await external_fs_.promises.lstat(basisPath).catch(() => null);
+        if (!basisStat) {
+            changed.push(f);
+            continue;
+        }
+        if (f.linkTarget !== undefined) {
+            if (!basisStat.isSymbolicLink()) {
+                changed.push(f);
+                continue;
+            }
+            const basisTarget = (await external_fs_.promises.readlink(basisPath)).split(external_path_namespaceObject.sep).join('/');
+            if (basisTarget !== f.linkTarget) {
+                changed.push(f);
+            }
+            continue;
+        }
+        if (!basisStat.isFile()) {
             changed.push(f);
             continue;
         }
@@ -86038,18 +86756,24 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
             changed.push(f);
         }
     }
-    const encodedPayloads = await mapLimit(changed, encodeLimit, async (f) => {
+    // Symlink entries travel in the manifest only, with no payloads.
+    const changedFiles = changed.filter((f) => f.linkTarget === undefined);
+    // Grows in the needFull retry below; sized here so the summary counts
+    // every path that actually shipped this sync.
+    const changedPaths = new Set(changed.map((f) => f.path));
+    const encodedPayloads = await mapLimit(changedFiles, encodeLimit, async (f) => {
         const basisPath = cacheGet(opts.basisCacheDir, f.path);
-        if (external_fs_.existsSync(basisPath)) {
+        const basisStat = f.size >= MIN_XDELTA_TARGET_BYTES ? await external_fs_.promises.lstat(basisPath).catch(() => null) : null;
+        if (basisStat?.isFile()) {
             const basisSha = await sha256FileHex(basisPath);
-            const tmpDir = await external_fs_.promises.mkdtemp(external_path_.join(external_os_namespaceObject.tmpdir(), 'limulator-xdelta3-'));
-            const patchPath = external_path_.join(tmpDir, 'patch.xdelta3');
+            const tmpDir = await external_fs_.promises.mkdtemp(external_path_namespaceObject.join(external_os_namespaceObject.tmpdir(), 'limulator-xdelta3-'));
+            const patchPath = external_path_namespaceObject.join(tmpDir, 'patch.xdelta3');
             const encodeStart = nowMs();
-            const patchSize = await encodeXdelta3Patch(basisPath, f.absPath, patchPath, maxPatchBytes);
+            const patchSize = await encodeXdelta3Patch(basisPath, f.absPath, patchPath, defaultMaxPatchBytes(f.size));
             const encodeMs = nowMs() - encodeStart;
             deltaEncodeMsTotal += encodeMs;
             if (patchSize >= 0) {
-                slog('debug', `delta(file): ${external_path_.posix.basename(f.path)} patchSize=${patchSize} encode=${fmtMs(encodeMs)}`);
+                slog('debug', `delta(file): ${external_path_namespaceObject.posix.basename(f.path)} patchSize=${patchSize} encode=${fmtMs(encodeMs)}`);
                 bytesSentDelta += patchSize;
                 return {
                     payload: {
@@ -86072,6 +86796,9 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
             }
         }
         slog('debug', `full(file): ${f.path} size=${f.size}`);
+        if (f.size >= LARGE_UPLOAD_NOTICE_BYTES) {
+            slog('debug', `uploading large file ${f.path} (${fmtBytes(f.size)})`);
+        }
         bytesSentFull += f.size;
         return {
             payload: {
@@ -86092,12 +86819,13 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
             path: f.path,
             size: f.size,
             sha256: f.sha256.toLowerCase(),
-            mode: f.mode,
+            // Symlink entries carry the target; regular files carry the mode bits.
+            ...(f.linkTarget !== undefined ? { link: f.linkTarget } : { mode: f.mode }),
         })),
         payloads: encodedPayloads.map((p) => p.payload),
     };
     const hasDelta = encodedPayloads.some((p) => p.payload.kind === 'delta');
-    const compression = hasDelta ? 'identity' : preferredCompression;
+    const compression = opts.compression ?? (hasDelta ? 'identity' : preferredCompression);
     slog('debug', `sync started files=${allFiles.length}${reason ? ` reason=${reason}` : ''} compression=${compression}`);
     const sendStart = nowMs();
     let resp;
@@ -86115,11 +86843,28 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
     // Retry once if server needs full for some paths (basis mismatch).
     if (!resp.ok && resp.needFull && resp.needFull.length > 0) {
         const need = new Set(resp.needFull);
+        // A daemon that predates symlink support json-drops the `link` field and
+        // asks for these entries as full files. Streaming absPath would FOLLOW
+        // the link and silently materialize target content remotely, so fail loud
+        // instead. (New daemons never put symlink entries in needFull.)
+        const needFullLinks = [...need].filter((p) => fileMap.get(p)?.linkTarget !== undefined);
+        if (needFullLinks.length > 0) {
+            throw new Error("this instance's build daemon does not support symlinks yet (needs an updated limbuild); " +
+                `recreate the instance or retry later. Paths: ${needFullLinks.join(', ')}`);
+        }
         const retryPayloads = [];
         for (const p of need) {
             const entry = fileMap.get(p);
             if (!entry)
                 continue;
+            // The retry uploads real bytes: count them (and surface large files)
+            // exactly like first-pass fulls, or a fresh-daemon resync of a warm
+            // cache reports "sent=0B" while gigabytes upload.
+            if (entry.size >= LARGE_UPLOAD_NOTICE_BYTES) {
+                slog('debug', `uploading large file ${entry.path} (${fmtBytes(entry.size)})`);
+            }
+            bytesSentFull += entry.size;
+            changedPaths.add(entry.path);
             retryPayloads.push({
                 payload: {
                     kind: 'full',
@@ -86131,14 +86876,14 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
             });
         }
         if (retryPayloads.length > 0) {
-            slog('debug', `server requested full for ${retryPayloads.length} files; retrying once`);
+            slog('debug', `daemon requested a full upload for ${retryPayloads.length} files (no matching basis); retrying once`);
             const retryMeta = {
                 ...meta,
                 id: genId('sync'),
                 payloads: retryPayloads.map((p) => p.payload),
             };
             const retryStart = nowMs();
-            resp = await httpFolderSyncBatch(opts, retryMeta, retryPayloads.map((p) => ({ filePath: p.filePath })), preferredCompression);
+            resp = await httpFolderSyncBatch(opts, retryMeta, retryPayloads.map((p) => ({ filePath: p.filePath })), opts.compression ?? preferredCompression);
             httpSendMsTotal += nowMs() - retryStart;
         }
     }
@@ -86160,8 +86905,9 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
     }
     const tookMs = nowMs() - totalStart;
     const totalBytes = bytesSentFull + bytesSentDelta;
-    slog('debug', `sync finished files=${allFiles.length} sent=${fmtBytes(totalBytes)} syncWork=${fmtMs(syncWorkMs)} total=${fmtMs(tookMs)}`);
-    const out = {};
+    slog('debug', `sync complete: files=${allFiles.length} changed=${changedPaths.size} sent=${fmtBytes(totalBytes)} in ${fmtMs(tookMs)}`);
+    slog('debug', `sync timing syncWork=${fmtMs(syncWorkMs)} total=${fmtMs(tookMs)}`);
+    const out = { bytesSent: totalBytes };
     if (resp.installedAppPath) {
         out.installedAppPath = resp.installedAppPath;
     }
@@ -86169,8 +86915,12 @@ async function syncFolderOnce(localFolderPath, opts, reason, attempt = 0) {
         out.installedBundleId = resp.bundleId;
     }
     // Update local cache optimistically: after a successful sync, cache reflects current local tree.
+    // The stale-symlink-ancestor sweep only matters when symlink sync is on
+    // (otherwise the cache never holds a symlink); checkedDirs memoizes ancestors
+    // across the sorted walk.
+    const checkedDirs = opts.syncSymlinks ? new Set() : undefined;
     for (const f of allFiles) {
-        await cachePut(opts.basisCacheDir, f.path, f.absPath);
+        await cachePut(opts.basisCacheDir, f.path, f.absPath, f.linkTarget, checkedDirs);
     }
     return out;
 }
@@ -86188,10 +86938,18 @@ var ignore = __nccwpck_require__(298);
 const execFileAsync = (0,external_util_.promisify)(external_child_process_namespaceObject.execFile);
 function normalizeRelativePath(relativePath) {
     return relativePath
-        .split(external_path_.sep)
+        .split(external_path_namespaceObject.sep)
         .join('/')
         .replace(/^\.\/+/, '')
         .replace(/\/+/g, '/');
+}
+// Linear-time replacement for `.replace(/\/+$/, '')`: that regex backtracks
+// quadratically on long runs of '/' (flagged by CodeQL as polynomial ReDoS).
+function stripTrailingSlashes(s) {
+    let end = s.length;
+    while (end > 0 && s[end - 1] === '/')
+        end--;
+    return end === s.length ? s : s.slice(0, end);
 }
 async function getGitTrackedSets(rootDir) {
     try {
@@ -86217,23 +86975,96 @@ async function getGitTrackedSets(rootDir) {
         return null;
     }
 }
+// Root-anchored (top-level only) default excludes; nested build junk is the
+// project's own nested .gitignore's job. xcuserdata/.dSYM below are any-depth.
+const XCODE_DEFAULT_EXCLUDE_PREFIXES = [
+    'build/',
+    '.build/',
+    'DerivedData/',
+    'Index.noindex/',
+    'ModuleCache.noindex/',
+    '.index-build/',
+    '.swiftpm/',
+    'Pods/',
+    'Carthage/Build/',
+];
+/**
+ * Builds the layered sync ignore predicate. First decisive answer wins:
+ *
+ *  1. The basis cache: excluded, never overridable.
+ *  2. User include (--include): explicit intent beats every other exclusion.
+ *  3. `.git` and `.DS_Store`.
+ *  4. Default Xcode/dependency excludes (when xcodeDefaults is set).
+ *  5. Built-in force-include: `*.xcconfig` (gitignored xcconfigs are still
+ *     required to reproduce the build remotely). Gitignored projects are NOT
+ *     force-included: limbuild regenerates them from project.yml, and
+ *     exact-version holdouts force-sync theirs with `--include`.
+ *  6. `.gitignore` chain: the root file, plus nested ones with git semantics
+ *     when xcodeDefaults is set (rules bind relative to their containing
+ *     directory, deeper files override shallower ones). Only a decisive
+ *     *exclude* short-circuits; a negation re-include defers to layer 7.
+ *     Directory pruning in the walk means only layers 2 and 5 can reach a
+ *     file whose parent directory is gitignore-excluded, and only when the
+ *     predicate matches the pruned parent directory paths too.
+ *  7. User ignore (--ignore).
+ */
 async function folder_sync_ignore_createIgnoreFn(rootDir, options) {
-    const rootResolved = external_path_.resolve(rootDir);
+    const rootResolved = external_path_namespaceObject.resolve(rootDir);
+    // Per-directory .gitignore instances, lazily loaded; key is the dir path
+    // relative to the root ('' = root), value null when the dir has none.
     // ignorecase: false matches git's default semantics. The package defaults to true,
     // which silently drops e.g. `Vendor/` when .gitignore says `vendor/` (Ruby convention).
     // allowRelativePaths: true so a `../`-style path doesn't throw mid-sync — treat it as
     // "not ignored" and let it through, since the cost of dropping a needed file is higher
     // than including an unexpected one.
-    const ig = ignore({ ignorecase: false, allowRelativePaths: true });
-    const gitignorePath = external_path_.join(rootResolved, '.gitignore');
-    try {
-        const content = await external_fs_.promises.readFile(gitignorePath, 'utf-8');
-        ig.add(content);
-    }
-    catch {
-        // No .gitignore file, return empty ignore instance
-    }
-    const basisCacheRelative = normalizeRelativePath(external_path_.relative(rootResolved, options.basisCacheDir)).replace(/\/+$/, '');
+    const dirIgnores = new Map();
+    const gitignoreFor = (dirRel) => {
+        let ig = dirIgnores.get(dirRel);
+        if (ig !== undefined)
+            return ig;
+        try {
+            const content = external_fs_.readFileSync(external_path_namespaceObject.join(rootResolved, dirRel.split('/').join(external_path_namespaceObject.sep), '.gitignore'), 'utf-8');
+            ig = ignore({ ignorecase: false, allowRelativePaths: true }).add(content);
+        }
+        catch {
+            ig = null;
+        }
+        dirIgnores.set(dirRel, ig);
+        return ig;
+    };
+    // xcodeDefaults selects "Xcode project sync mode": besides the default junk
+    // excludes it also enables nested-.gitignore honoring and the project-file
+    // force-includes below. Callers that don't set it (e.g. the app-bundle
+    // install sync) keep the legacy behavior: root-only .gitignore and no
+    // project force-includes, so a build artifact isn't reshaped by gitignore
+    // files or Xcode-specific rules that happen to sit inside it.
+    const nestedGitignore = options.nestedGitignore ?? !!options.xcodeDefaults;
+    // Evaluates the .gitignore chain for a path (trailing slash preserved so
+    // dir-only rules like `build/` match the directory itself). Files are
+    // consulted root-to-deepest; the last decisive match wins, so deeper
+    // files naturally override shallower ones. When nestedGitignore is off,
+    // only the root .gitignore is consulted.
+    const gitignoreDecision = (testPath) => {
+        const withoutTrailingSlash = stripTrailingSlashes(testPath);
+        const trailingSlash = testPath.endsWith('/') ? '/' : '';
+        const parts = withoutTrailingSlash.split('/');
+        let decision;
+        const depth = nestedGitignore ? parts.length : 1;
+        for (let i = 0; i < depth; i++) {
+            const ig = gitignoreFor(parts.slice(0, i).join('/'));
+            if (!ig)
+                continue;
+            const result = ig.test(parts.slice(i).join('/') + trailingSlash);
+            if (result.ignored || result.unignored) {
+                decision = { ignored: result.ignored };
+                const rule = result.rule?.pattern;
+                if (rule !== undefined)
+                    decision.rule = rule;
+            }
+        }
+        return decision;
+    };
+    const basisCacheRelative = stripTrailingSlashes(normalizeRelativePath(external_path_namespaceObject.relative(rootResolved, options.basisCacheDir)));
     const shouldIgnoreBasisCache = basisCacheRelative &&
         basisCacheRelative !== '.' &&
         basisCacheRelative !== '..' &&
@@ -86246,7 +87077,17 @@ async function folder_sync_ignore_createIgnoreFn(rootDir, options) {
         const normalized = normalizeRelativePath(relativePath);
         if (!normalized)
             return false;
-        const withoutTrailingSlash = normalized.replace(/\/+$/, '');
+        const withoutTrailingSlash = stripTrailingSlashes(normalized);
+        // 1. The basis cache must not sync itself, even when --include matches.
+        if (shouldIgnoreBasisCache &&
+            (withoutTrailingSlash === basisCacheRelative ||
+                withoutTrailingSlash.startsWith(`${basisCacheRelative}/`))) {
+            return true;
+        }
+        // 2. User include.
+        if (options.include?.(normalized))
+            return false;
+        // 3. Built-in excludes.
         if (withoutTrailingSlash === '.git' ||
             withoutTrailingSlash.startsWith('.git/') ||
             withoutTrailingSlash.endsWith('/.git') ||
@@ -86255,20 +87096,33 @@ async function folder_sync_ignore_createIgnoreFn(rootDir, options) {
             withoutTrailingSlash.endsWith('/.DS_Store')) {
             return true;
         }
-        if (shouldIgnoreBasisCache &&
-            (withoutTrailingSlash === basisCacheRelative ||
-                withoutTrailingSlash.startsWith(`${basisCacheRelative}/`))) {
-            return true;
+        // 4. Default Xcode/dependency excludes.
+        if (options.xcodeDefaults) {
+            for (const prefix of XCODE_DEFAULT_EXCLUDE_PREFIXES) {
+                if (normalized.startsWith(prefix))
+                    return true;
+            }
+            if (normalized.includes('/xcuserdata/') || normalized.includes('.dSYM/'))
+                return true;
         }
+        // 5. Built-in force-include: gitignored xcconfigs are still required to
+        // reproduce the build remotely. Gitignored .xcodeproj bundles are NOT
+        // force-included: limbuild regenerates them from project.yml, and
+        // exact-version holdouts force-sync theirs with --include.
         if (withoutTrailingSlash.endsWith('.xcconfig'))
             return false;
-        if (ig.ignores(normalized)) {
+        // 6. The .gitignore chain. Only a decisive *exclude* short-circuits; a
+        // negation re-include (decision.ignored === false) still falls through to
+        // the user --ignore layer, matching the pre-restructure precedence where
+        // gitignore never overrode --ignore for a re-included path.
+        const decision = gitignoreDecision(normalized);
+        if (decision?.ignored) {
             if (trackedSets &&
                 (trackedSets.tracked.has(withoutTrailingSlash) || trackedSets.prefixes.has(withoutTrailingSlash))) {
-                const rule = ig.test(normalized).rule?.pattern ?? '<unknown>';
+                const rule = decision.rule ?? '<unknown>';
                 if (!warnedRules.has(rule)) {
                     warnedRules.add(rule);
-                    const msg = `.gitignore rule '${rule}' is dropping '${withoutTrailingSlash}', which is tracked in git. The remote build will not see this path. Remove or scope the rule if you need it synced.`;
+                    const msg = `.gitignore rule '${rule}' is dropping '${withoutTrailingSlash}', which is tracked in git. The remote build will not see this path. Remove or scope the rule, or pass --include, if you need it synced.`;
                     if (log) {
                         log('warn', msg);
                     }
@@ -86279,12 +87133,59 @@ async function folder_sync_ignore_createIgnoreFn(rootDir, options) {
             }
             return true;
         }
+        // 7. User ignore.
         if (options.additional?.(normalized))
             return true;
         return false;
     };
 }
 //# sourceMappingURL=folder-sync-ignore.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/daemon-client-shared.mjs
+// Helpers and platform-neutral types shared by the per-instance build-daemon
+// clients (xcode, gradle).
+
+
+
+/**
+ * Derives the client-side folder-sync cache location for a local project.
+ * The key format is a compatibility contract: changing it orphans every
+ * user's existing basis cache, so both daemon clients must share this one
+ * derivation.
+ */
+function deriveBasisCache(localCodePath, override) {
+    const resolvedPath = external_path_namespaceObject.resolve(localCodePath);
+    const folderName = external_path_namespaceObject.basename(resolvedPath);
+    const hash = external_crypto_.createHash('sha1').update(resolvedPath).digest('hex').slice(0, 8);
+    const cacheKey = `limsync-cache-${folderName}-${hash}`;
+    return { cacheKey, basisCacheDir: override ?? external_path_namespaceObject.join(external_os_namespaceObject.tmpdir(), cacheKey) };
+}
+/**
+ * Mints presigned upload/download URLs for a named asset via assets.getOrCreate,
+ * wrapping failures with the asset name (and the original error as cause).
+ */
+function mintAssetUploadUrls(assets, name, ttl, uploadOptions) {
+    return assets.getOrCreate({ name, ...(ttl && { ttl }), ...uploadOptions }).catch((err) => {
+        const message = `Failed to create upload URL for asset '${name}': ${err instanceof Error ? err.message : err}`;
+        // @ts-ignore - not all envs have native support for cause yet
+        throw new Error(message, { cause: err });
+    });
+}
+const logLevels = ['none', 'error', 'warn', 'info', 'debug'];
+function createDaemonLogger(prefix, logLevel) {
+    const threshold = logLevels.indexOf(logLevel);
+    const shouldLog = (level) => threshold >= logLevels.indexOf(level);
+    return (level, msg) => {
+        if (!shouldLog(level))
+            return;
+        if (level === 'error' || level === 'warn') {
+            console[level](prefix, msg);
+        }
+        else {
+            console.log(prefix, msg);
+        }
+    };
+}
+//# sourceMappingURL=daemon-client-shared.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/build-settings.mjs
 // Structural validation only. The server is authoritative on which build
 // settings are allowed (an allowlist of safe standard settings plus the
@@ -86417,6 +87318,9 @@ async function tunnel_startReverseTcpTunnel(remoteURL, token, options) {
     const logLevel = options.logLevel ?? 'info';
     const maxConnections = options.maxConnections ?? 64;
     const maxPendingBytesPerConnection = options.maxPendingBytesPerConnection ?? 16 * 1024 * 1024;
+    const maxBufferedBytes = options.maxBufferedBytes ?? 4 * 1024 * 1024;
+    // Hysteresis: resume well below the pause threshold to avoid flapping.
+    const resumeBelowBufferedBytes = maxBufferedBytes / 4;
     const connectTimeoutMs = options.connectTimeoutMs ?? 10000;
     const logger = {
         debug: (...args) => {
@@ -86450,6 +87354,8 @@ async function tunnel_startReverseTcpTunnel(remoteURL, token, options) {
         let connectionState = 'connecting';
         let hasResolved = false;
         let remoteAddress;
+        // The WebSocket is shared by all connections, so backpressure is tunnel-wide.
+        let pausedForBackpressure = false;
         const updateConnectionState = (newState) => {
             if (connectionState !== newState) {
                 connectionState = newState;
@@ -86466,7 +87372,34 @@ async function tunnel_startReverseTcpTunnel(remoteURL, token, options) {
         };
         const sendCloseSignal = (connId) => {
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(encodeConnectionHeader(connId));
+                // The drain check on completion keeps resume reachable even when the
+                // last frames in the queue are close signals rather than data.
+                ws.send(encodeConnectionHeader(connId), () => resumeIfDrained());
+            }
+        };
+        const pauseForBackpressure = () => {
+            if (pausedForBackpressure)
+                return;
+            pausedForBackpressure = true;
+            logger.debug('WebSocket send buffer full, pausing local reads');
+            for (const socket of connections.values()) {
+                if (!socket.destroyed)
+                    socket.pause();
+            }
+        };
+        // Called from ws.send completion callbacks. Sends and callbacks are 1:1
+        // and pausing happens after at least one send is queued, so the callback
+        // that observes a drained buffer is guaranteed to exist; no polling needed.
+        const resumeIfDrained = () => {
+            if (!pausedForBackpressure)
+                return;
+            if (!ws || ws.bufferedAmount >= resumeBelowBufferedBytes)
+                return;
+            pausedForBackpressure = false;
+            logger.debug('WebSocket send buffer drained, resuming local reads');
+            for (const socket of connections.values()) {
+                if (!socket.destroyed)
+                    socket.resume();
             }
         };
         const markRecentlyClosed = (connId) => {
@@ -86513,6 +87446,7 @@ async function tunnel_startReverseTcpTunnel(remoteURL, token, options) {
             for (const connId of Array.from(connections.keys())) {
                 removeConnection(connId, false);
             }
+            pausedForBackpressure = false;
             connections.clear();
             connecting.clear();
             pendingPerConn.clear();
@@ -86610,6 +87544,11 @@ async function tunnel_startReverseTcpTunnel(remoteURL, token, options) {
             pendingBytesPerConn.set(connId, firstPayload.length);
             connecting.add(connId);
             const socket = net.createConnection({ host: localHost, port: localPort });
+            // Self-heal a stale pause before applying it to the new socket.
+            resumeIfDrained();
+            if (pausedForBackpressure) {
+                socket.pause();
+            }
             connections.set(connId, socket);
             const connectTimer = setTimeout(() => {
                 logger.error(`Local TCP connect timed out conn=${connId} after ${connectTimeoutMs}ms`);
@@ -86623,13 +87562,22 @@ async function tunnel_startReverseTcpTunnel(remoteURL, token, options) {
                 logger.debug(`Connected conn=${connId} to ${localHost}:${localPort}`);
                 flushPending(connId, socket);
             });
+            const header = encodeConnectionHeader(connId);
+            const onSent = (err) => {
+                if (err) {
+                    logger.error(`Failed to send conn=${connId} data: ${err.message}`);
+                }
+                resumeIfDrained();
+            };
             socket.on('data', (chunk) => {
                 if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(Buffer.concat([encodeConnectionHeader(connId), chunk]), (err) => {
-                        if (err) {
-                            logger.error(`Failed to send conn=${connId} data: ${err.message}`);
-                        }
-                    });
+                    const framed = Buffer.allocUnsafe(4 + chunk.length);
+                    header.copy(framed, 0);
+                    chunk.copy(framed, 4);
+                    ws.send(framed, onSent);
+                    if (!pausedForBackpressure && ws.bufferedAmount > maxBufferedBytes) {
+                        pauseForBackpressure();
+                    }
                 }
             });
             socket.on('close', () => {
@@ -87447,27 +88395,6 @@ async function waitForRbeRunning(client, initial, opts = {}) {
     return status;
 }
 //# sourceMappingURL=rbe-session.mjs.map
-;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/sse-fetch.mjs
-/**
- * Wraps a fetch for use with eventsource-client, which swallows a REJECTED
- * fetch (connection refused, instance gone) into a silent reconnect loop
- * without ever calling onDisconnect. The wrapper reports the rejection so the
- * caller can settle its promise instead of hanging while the client
- * reconnect-loops. exec-client has the same latent hazard and should adopt
- * this when touched next.
- */
-function sseFetch(fetchImpl, onRejected) {
-    return async (input, init) => {
-        try {
-            return await fetchImpl(input, init);
-        }
-        catch (err) {
-            onRejected(err);
-            throw err;
-        }
-    };
-}
-//# sourceMappingURL=sse-fetch.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/xcode-instances-helpers.mjs
 
 
@@ -87486,23 +88413,6 @@ function sseFetch(fetchImpl, onRejected) {
 
 /** Default local TCP port the RBE tunnel listens on. */
 const DEFAULT_RBE_TUNNEL_PORT = 8980;
-function xcode_instances_helpers_createLogger(logLevel) {
-    const shouldLog = (level) => {
-        const levels = ['none', 'error', 'warn', 'info', 'debug'];
-        return levels.indexOf(logLevel) >= levels.indexOf(level);
-    };
-    return (level, msg) => {
-        if (!shouldLog(level))
-            return;
-        const prefix = '[XcodeInstance]';
-        if (level === 'error' || level === 'warn') {
-            console[level](prefix, msg);
-        }
-        else {
-            console.log(prefix, msg);
-        }
-    };
-}
 function normalizeWorkspaceRelativePath(remotePath) {
     if (remotePath === '' ||
         remotePath.startsWith('/') ||
@@ -87589,19 +88499,56 @@ async function readJsonResponse(res, operation) {
     }
     return JSON.parse(text);
 }
-/**
- * Mints presigned upload/download URLs for a named asset via assets.getOrCreate,
- * wrapping failures with the asset name (and the original error as cause).
- * Shared by the xcodebuild `--upload` path and `uploadLatestRbeBuild`.
- */
-function mintAssetUploadUrls(assets, name, ttl) {
-    return assets.getOrCreate({ name, ...(ttl && { ttl }) }).catch((err) => {
-        const message = `Failed to create upload URL for asset '${name}': ${err instanceof Error ? err.message : err}`;
-        // @ts-ignore - not all envs have native support for cause yet
-        throw new Error(message, { cause: err });
-    });
-}
 class XcodeInstances extends xcode_instances_XcodeInstances {
+    /**
+     * List the instance's persisted build logs.
+     */
+    listBuildLogs(id, options) {
+        return this._client.get(path_path `/v1/xcode_instances/${id}/build_logs`, options);
+    }
+    /**
+     * List the instance's persisted Bazel RBE invocation logs.
+     */
+    listBazelBuildLogs(id, options) {
+        return this._client.get(path_path `/v1/xcode_instances/${id}/bazel_build_logs`, options);
+    }
+    /**
+     * Create an Xcode instance, optionally with a build cache.
+     *
+     * Widens the generated signature with `spec.cache`; drop this override once the generator
+     * knows about the field. The request body passes through untouched either way.
+     */
+    create(params, options) {
+        return super.create(params, options);
+    }
+    /** Current cache configuration and status of an instance. */
+    getCache(id, options) {
+        return this._client.get(path_path `/v1/xcode_instances/${id}/cache`, options);
+    }
+    /**
+     * Bind the destination key this instance publishes under at termination. Set once: binding
+     * the same key again is accepted, a different one is rejected.
+     *
+     * The instance needs a stable directory to publish from, which only a create that asked for
+     * caching allocates, so bind on an instance created with cache paths or a cache key.
+     */
+    bindCacheKey(id, key, options) {
+        return this._client.put(path_path `/v1/xcode_instances/${id}/cache`, {
+            body: { key },
+            ...options,
+        });
+    }
+    /**
+     * Follow an instance's cache status until the chosen side reaches a terminal phase. Reports
+     * every phase change through `onUpdate`, so a caller can show a restore as it happens.
+     */
+    followCache(id, options) {
+        const apiKey = this._client.apiKey;
+        if (!apiKey) {
+            throw new Error('Following cache status needs an API key on the client');
+        }
+        return followXcodeCache({ baseURL: this._client.baseURL, apiKey, instanceId: id }, options);
+    }
     async createClient(params) {
         let apiUrl;
         let token;
@@ -87616,7 +88563,7 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
             apiUrl = params.apiUrl;
             token = params.token;
         }
-        const log = xcode_instances_helpers_createLogger(params.logLevel ?? 'info');
+        const log = createDaemonLogger('[XcodeInstance]', params.logLevel ?? 'info');
         const client = this._client;
         let sandboxInfoPromise;
         const getSandboxInfo = () => {
@@ -87674,11 +88621,7 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
         };
         return {
             async sync(localCodePath, opts) {
-                const resolvedPath = external_path_.resolve(localCodePath);
-                const folderName = external_path_.basename(resolvedPath);
-                const hash = external_crypto_.createHash('sha1').update(resolvedPath).digest('hex').slice(0, 8);
-                const cacheKey = `limsync-cache-${folderName}-${hash}`;
-                const basisCacheDir = opts?.basisCacheDir ?? external_path_.join(external_os_namespaceObject.tmpdir(), cacheKey);
+                const { cacheKey, basisCacheDir } = deriveBasisCache(localCodePath, opts?.basisCacheDir);
                 const sandboxInfo = opts?.additionalFiles && opts.additionalFiles.length > 0 ? await getSandboxInfo() : undefined;
                 const additionalFiles = opts?.additionalFiles?.map((file) => ({
                     localPath: file.localPath,
@@ -87694,44 +88637,30 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                     ignoreFn: await folder_sync_ignore_createIgnoreFn(localCodePath, {
                         basisCacheDir,
                         log,
-                        additional: (relativePath) => {
-                            if (relativePath.startsWith('build/') ||
-                                relativePath.startsWith('.build/') ||
-                                relativePath.startsWith('DerivedData/') ||
-                                relativePath.startsWith('Index.noindex/') ||
-                                relativePath.startsWith('ModuleCache.noindex/') ||
-                                relativePath.startsWith('.index-build/')) {
-                                return true;
-                            }
-                            if (relativePath.startsWith('.swiftpm/') ||
-                                relativePath.startsWith('Pods/') ||
-                                relativePath.startsWith('Carthage/Build/')) {
-                                return true;
-                            }
-                            if (relativePath.includes('/xcuserdata/')) {
-                                return true;
-                            }
-                            if (relativePath.includes('.dSYM/')) {
-                                return true;
-                            }
-                            if (opts?.ignore?.(relativePath)) {
-                                return true;
-                            }
-                            return false;
-                        },
+                        xcodeDefaults: true,
+                        ...(opts?.include ? { include: opts.include } : {}),
+                        ...(opts?.ignore ? { additional: opts.ignore } : {}),
                     }),
                     basisCacheDir,
                     watch: opts?.watch ?? true,
-                    maxPatchBytes: opts?.maxPatchBytes ?? 4 * 1024 * 1024,
                     launchMode: 'ForegroundIfRunning',
                     log,
+                    // The limbuild workspace sync understands symlink entries; the
+                    // limulator app-install sync (ios-client.ts) does not and keeps
+                    // the default skip behavior.
+                    syncSymlinks: true,
                     ...(additionalFiles ? { additionalFiles } : {}),
+                    ...(opts?.onSyncComplete ? { onSyncComplete: opts.onSyncComplete } : {}),
                 };
                 const result = await folder_sync_syncFolder(localCodePath, codeSyncOpts);
-                if (result.stopWatching) {
-                    return { stopWatching: result.stopWatching };
+                const out = {};
+                if (result.bytesSent !== undefined) {
+                    out.bytesSent = result.bytesSent;
                 }
-                return {};
+                if (result.stopWatching) {
+                    out.stopWatching = result.stopWatching;
+                }
+                return out;
             },
             xcodebuild(settings, options) {
                 if (options?.reactNative?.devServerURL && settings?.configuration === 'Release') {
@@ -87743,13 +88672,22 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                 const request = {
                     command: 'xcodebuild',
                     ...(settings && { xcodebuild: settings }),
+                    ...(options?.xcodegen && { xcodegen: options.xcodegen }),
                     ...(options?.reactNative && { reactNative: options.reactNative }),
                     ...(options?.signing && { signing: options.signing }),
+                    ...(options?.cloudSigning && { cloudSigning: options.cloudSigning }),
+                    // The SDK calls this App Store; limbuild's existing wire field remains
+                    // testflight until the exec API is revised separately.
+                    ...(options?.appstore && { testflight: options.appstore }),
                     ...(options?.buildSettings && { buildSettings: options.buildSettings }),
+                    ...(options?.gitInit !== undefined && { gitInit: options.gitInit }),
+                    ...(options?.webhook && { webhook: options.webhook }),
                 };
                 if (options?.upload && 'assetName' in options.upload) {
-                    const requestPromise = mintAssetUploadUrls(client.assets, options.upload.assetName).then((asset) => {
+                    const requestPromise = mintAssetUploadUrls(client.assets, options.upload.assetName, undefined, options.upload.uploadOptions).then((asset) => {
                         request.signedUploadUrl = asset.signedUploadUrl;
+                        // Lets limbuild record the built app's metadata on the asset.
+                        request.assetId = asset.id;
                         request.additionalMetadata = { signedDownloadUrl: asset.signedDownloadUrl };
                         return request;
                     });
@@ -87758,6 +88696,25 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                 if (options?.upload && 'signedUploadUrl' in options.upload) {
                     request.signedUploadUrl = options.upload.signedUploadUrl;
                 }
+                return exec_client_exec(request, { apiUrl, token, log });
+            },
+            run(commandLine, options) {
+                if (commandLine.trim() === '') {
+                    throw new Error('commandLine must not be empty');
+                }
+                if (options?.timeoutSeconds !== undefined &&
+                    (!Number.isInteger(options.timeoutSeconds) ||
+                        options.timeoutSeconds < 1 ||
+                        options.timeoutSeconds > 21600)) {
+                    throw new Error('timeoutSeconds must be an integer between 1 and 21600');
+                }
+                const request = {
+                    command: 'run',
+                    commandLine,
+                    cwd: options?.cwd ?? '.',
+                    ...(options?.env && { env: options.env }),
+                    ...(options?.timeoutSeconds !== undefined && { timeoutSeconds: options.timeoutSeconds }),
+                };
                 return exec_client_exec(request, { apiUrl, token, log });
             },
             async getSimulator() {
@@ -87932,12 +88889,129 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
     }
 }
 //# sourceMappingURL=xcode-instances-helpers.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/gradle-instances-helpers.mjs
+
+
+
+
+
+
+// Machine-local or regenerable files that must never reach the build
+// sandbox: local.properties points at the developer's own SDK and would
+// shadow the image's. Only ROOT-level cache/output dirs are defaulted;
+// nested module build/ dirs are the project .gitignore's job (dropping any
+// 'build' segment would silently exclude legitimate packages named build).
+function gradleDefaultIgnore(relativePath) {
+    const trimmed = relativePath.endsWith('/') ? relativePath.slice(0, -1) : relativePath;
+    const segments = trimmed.split('/');
+    if (segments[segments.length - 1] === 'local.properties') {
+        return true;
+    }
+    return segments.length === 1 && (trimmed === '.gradle' || trimmed === '.kotlin' || trimmed === 'build');
+}
+// The method bodies live in a subclass so they can use the protected
+// `_client`. They are grafted onto the generated class below, instead of
+// exporting the subclass, so that generated files need no custom-code patch
+// to swap the class they export and instantiate.
+class GradleInstancesHelpers extends GradleInstances {
+    /**
+     * List the instance's persisted build logs.
+     */
+    listBuildLogs(id, options) {
+        return this._client.get(path_path `/v1/gradle_instances/${id}/build_logs`, options);
+    }
+    async createClient(params) {
+        let apiUrl;
+        let token;
+        if ('instance' in params) {
+            if (!params.instance.status.apiUrl) {
+                throw new Error('Instance not ready: apiUrl is not available');
+            }
+            apiUrl = params.instance.status.apiUrl;
+            token = params.instance.status.token;
+        }
+        else {
+            apiUrl = params.apiUrl;
+            token = params.token;
+        }
+        const log = createDaemonLogger('[GradleInstance]', params.logLevel ?? 'info');
+        const client = this._client;
+        return {
+            async sync(localCodePath, opts) {
+                const { cacheKey, basisCacheDir } = deriveBasisCache(localCodePath, opts?.basisCacheDir);
+                const userIgnore = opts?.ignore;
+                const codeSyncOpts = {
+                    apiUrl,
+                    token,
+                    udid: cacheKey,
+                    install: false,
+                    ignoreFn: await folder_sync_ignore_createIgnoreFn(localCodePath, {
+                        basisCacheDir,
+                        log,
+                        xcodeDefaults: false,
+                        // Honor nested module .gitignore files (app/.gitignore's /build,
+                        // etc.); gradleDefaultIgnore only covers root-level build/.gradle/
+                        // .kotlin, so without this a locally-built project would sync its
+                        // nested build/ artifact trees.
+                        nestedGitignore: true,
+                        additional: userIgnore ? (p) => gradleDefaultIgnore(p) || userIgnore(p) : gradleDefaultIgnore,
+                        ...(opts?.include ? { include: opts.include } : {}),
+                    }),
+                    basisCacheDir,
+                    // Gradle builds are one-shot; no dev-loop watch like xcode.
+                    watch: false,
+                    launchMode: 'ForegroundIfRunning',
+                    log,
+                    syncSymlinks: true,
+                };
+                const result = await folder_sync_syncFolder(localCodePath, codeSyncOpts);
+                const out = {};
+                if (result.bytesSent !== undefined) {
+                    out.bytesSent = result.bytesSent;
+                }
+                return out;
+            },
+            gradlebuild(options) {
+                const request = {
+                    command: 'gradlebuild',
+                    ...(options?.tasks?.length && { tasks: options.tasks }),
+                    ...(options?.projectPath && { projectPath: options.projectPath }),
+                    ...(options?.reactNative && { reactNative: options.reactNative }),
+                    ...(options?.signing && { signing: options.signing }),
+                    ...(options?.webhook && { webhook: options.webhook }),
+                    ...(options?.playstore && { playstore: options.playstore }),
+                };
+                if (options?.upload && 'assetName' in options.upload) {
+                    const requestPromise = mintAssetUploadUrls(client.assets, options.upload.assetName).then((asset) => {
+                        request.signedUploadUrl = asset.signedUploadUrl;
+                        request.additionalMetadata = { signedDownloadUrl: asset.signedDownloadUrl };
+                        return request;
+                    });
+                    return exec_client_exec(requestPromise, { apiUrl, token, log });
+                }
+                if (options?.upload && 'signedUploadUrl' in options.upload) {
+                    request.signedUploadUrl = options.upload.signedUploadUrl;
+                }
+                return exec_client_exec(request, { apiUrl, token, log });
+            },
+        };
+    }
+}
+GradleInstances.prototype.listBuildLogs = GradleInstancesHelpers.prototype.listBuildLogs;
+GradleInstances.prototype.createClient = GradleInstancesHelpers.prototype.createClient;
+//# sourceMappingURL=gradle-instances-helpers.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/index.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 
 
 
+
+
+
+// Side-effect import: grafts the createClient/listBuildLogs helpers onto the
+// generated GradleInstances class. The type-only re-export below is erased at
+// runtime, so it would not load the module on its own.
 
 //# sourceMappingURL=index.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/utils/env.mjs
@@ -87986,6 +89060,8 @@ var _Limrun_instances, _a, _Limrun_encoder, _Limrun_baseURLOverridden;
 
 
 
+
+
 /**
  * API Client for interfacing with the Limrun API.
  */
@@ -88009,7 +89085,9 @@ class Limrun {
         this.assets = new Assets(this);
         this.iosInstances = new IosInstances(this);
         this.xcodeInstances = new XcodeInstances(this);
+        this.gradleInstances = new GradleInstances(this);
         this.analytics = new Analytics(this);
+        this.scopedTokens = new ScopedTokens(this);
         const options = {
             apiKey,
             ...opts,
@@ -88466,7 +89544,9 @@ Limrun.AndroidInstances = AndroidInstances;
 Limrun.Assets = Assets;
 Limrun.IosInstances = IosInstances;
 Limrun.XcodeInstances = XcodeInstances;
+Limrun.GradleInstances = GradleInstances;
 Limrun.Analytics = Analytics;
+Limrun.ScopedTokens = ScopedTokens;
 //# sourceMappingURL=client.mjs.map
 ;// CONCATENATED MODULE: external "node:child_process"
 const external_node_child_process_namespaceObject = require("node:child_process");
@@ -88478,7 +89558,7 @@ const promises_namespaceObject = require("stream/promises");
 
 
 
-async function download_file_downloadFileToLocalPath(url, token, localPath) {
+async function download_file_downloadFileToLocalPath(url, token, localPath, onProgress) {
     const maxRetries = 3;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         const response = await nodeProxyTransport.fetch(url, {
@@ -88499,12 +89579,552 @@ async function download_file_downloadFileToLocalPath(url, token, localPath) {
             throw new Error('Download failed: response body is missing');
         }
         await fs.promises.mkdir(path.dirname(localPath), { recursive: true });
-        await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(localPath));
+        const source = Readable.fromWeb(response.body);
+        if (onProgress) {
+            const totalBytes = Number(response.headers.get('content-length') ?? 0);
+            let downloadedBytes = 0;
+            source.on('data', (chunk) => {
+                downloadedBytes += chunk.length;
+                onProgress(downloadedBytes, totalBytes);
+            });
+        }
+        await pipeline(source, fs.createWriteStream(localPath));
         return;
     }
 }
 //# sourceMappingURL=download-file.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/seed-reconstruct.mjs
+
+
+
+
+
+const SIGNATURE_VERSION = 1;
+const STRONG_HASH_HEX_LENGTH = 32;
+const SCAN_CHUNK_SIZE = (/* unused pure expression or super */ null && (1024 * 1024));
+const MAX_ALIGNED_MISS_BYTES = (/* unused pure expression or super */ null && (32 * 1024 * 1024));
+const SHA256_PATTERN = /^[0-9a-f]{64}$/i;
+const STRONG_HASH_PATTERN = /^[0-9a-f]{32}$/i;
+function strongHash(buffer) {
+    return crypto.createHash('sha256').update(buffer).digest('hex').slice(0, STRONG_HASH_HEX_LENGTH);
+}
+function blockSpan(signature, index) {
+    const offset = index * signature.blockSize;
+    return {
+        offset,
+        length: Math.min(signature.blockSize, signature.fileSize - offset),
+    };
+}
+async function seed_reconstruct_sha256FileHex(filePath) {
+    return await new Promise((resolve, reject) => {
+        const hash = crypto.createHash('sha256');
+        const stream = fs.createReadStream(filePath);
+        stream.on('data', (chunk) => hash.update(chunk));
+        stream.on('error', reject);
+        stream.on('end', () => resolve(hash.digest('hex')));
+    });
+}
+function weakRollingChecksum(buffer) {
+    let a = 0;
+    let b = 0;
+    for (let i = 0; i < buffer.byteLength; i++) {
+        const value = buffer[i];
+        a = (a + value) & 0xffff;
+        b = (b + (buffer.byteLength - i) * value) & 0xffff;
+    }
+    return b * 0x10000 + a;
+}
+function validateSignature(value, expectedSha256) {
+    if (!value || typeof value !== 'object') {
+        throw new Error('Invalid seed signature: expected an object');
+    }
+    const candidate = value;
+    if (candidate.version !== SIGNATURE_VERSION) {
+        throw new Error(`Unsupported seed signature version: ${String(candidate.version)}`);
+    }
+    if (!Number.isSafeInteger(candidate.blockSize) || candidate.blockSize <= 0) {
+        throw new Error('Invalid seed signature blockSize');
+    }
+    if (!Number.isSafeInteger(candidate.fileSize) || candidate.fileSize < 0) {
+        throw new Error('Invalid seed signature fileSize');
+    }
+    if (typeof candidate.sha256 !== 'string' ||
+        !SHA256_PATTERN.test(candidate.sha256) ||
+        candidate.sha256.toLowerCase() !== expectedSha256.toLowerCase()) {
+        throw new Error('Seed signature sha256 does not match the requested seed');
+    }
+    if (!Array.isArray(candidate.blocks)) {
+        throw new Error('Invalid seed signature blocks');
+    }
+    const expectedBlocks = Math.ceil(candidate.fileSize / candidate.blockSize);
+    if (candidate.blocks.length !== expectedBlocks) {
+        throw new Error(`Invalid seed signature block count: got ${candidate.blocks.length}, expected ${expectedBlocks}`);
+    }
+    const blocks = candidate.blocks.map((block, index) => {
+        if (!block ||
+            !Number.isInteger(block.w) ||
+            block.w < 0 ||
+            block.w > 0xffffffff ||
+            typeof block.s !== 'string' ||
+            !STRONG_HASH_PATTERN.test(block.s)) {
+            throw new Error(`Invalid seed signature block at index ${index}`);
+        }
+        return { w: block.w, s: block.s.toLowerCase() };
+    });
+    return {
+        version: candidate.version,
+        blockSize: candidate.blockSize,
+        fileSize: candidate.fileSize,
+        sha256: candidate.sha256.toLowerCase(),
+        blocks,
+    };
+}
+async function fetchSeedSignature(signatureUrl, token, expectedSha256) {
+    const response = await nodeProxyTransport.fetch(signatureUrl, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Seed signature download failed: ${response.status} ${body}`);
+    }
+    return validateSignature(await response.json(), expectedSha256);
+}
+async function readExactly(handle, buffer, length, position) {
+    let offset = 0;
+    while (offset < length) {
+        const { bytesRead } = await handle.read(buffer, offset, length - offset, position + offset);
+        if (bytesRead <= 0) {
+            throw new Error(`Unexpected EOF at offset ${position + offset}`);
+        }
+        offset += bytesRead;
+    }
+}
+async function scanSourceForFullBlocks(source, candidatesByWeak, signature, matches, unmatched) {
+    const blockLength = signature.blockSize;
+    const handle = await fs.promises.open(source.path, 'r');
+    try {
+        if (source.size < blockLength || unmatched.size === 0) {
+            return;
+        }
+        const ring = Buffer.allocUnsafe(blockLength);
+        await readExactly(handle, ring, blockLength, 0);
+        let a = 0;
+        let b = 0;
+        for (let i = 0; i < blockLength; i++) {
+            const value = ring[i];
+            a = (a + value) & 0xffff;
+            b = (b + (blockLength - i) * value) & 0xffff;
+        }
+        let ringPosition = 0;
+        let sourceOffset = 0;
+        let candidateBuffer;
+        const confirmCandidate = async (candidateIndexes) => {
+            candidateBuffer ?? (candidateBuffer = Buffer.allocUnsafe(blockLength));
+            await readExactly(handle, candidateBuffer, blockLength, sourceOffset);
+            const strong = strongHash(candidateBuffer);
+            for (const index of candidateIndexes) {
+                if (unmatched.has(index) && signature.blocks[index].s === strong) {
+                    matches.set(index, { sourcePath: source.path, sourceOffset });
+                    unmatched.delete(index);
+                }
+            }
+        };
+        let candidateIndexes = candidatesByWeak.get(b * 0x10000 + a);
+        if (candidateIndexes?.some((index) => unmatched.has(index))) {
+            await confirmCandidate(candidateIndexes);
+        }
+        const incoming = Buffer.allocUnsafe(SCAN_CHUNK_SIZE);
+        let readPosition = blockLength;
+        while (readPosition < source.size && unmatched.size > 0) {
+            const requested = Math.min(incoming.byteLength, source.size - readPosition);
+            const { bytesRead } = await handle.read(incoming, 0, requested, readPosition);
+            if (bytesRead <= 0) {
+                break;
+            }
+            for (let i = 0; i < bytesRead && unmatched.size > 0; i++) {
+                const outgoingValue = ring[ringPosition];
+                const incomingValue = incoming[i];
+                ring[ringPosition] = incomingValue;
+                ringPosition++;
+                if (ringPosition === blockLength) {
+                    ringPosition = 0;
+                }
+                a = (a - outgoingValue + incomingValue) & 0xffff;
+                b = (b - ((blockLength * outgoingValue) & 0xffff) + a) & 0xffff;
+                sourceOffset++;
+                candidateIndexes = candidatesByWeak.get(b * 0x10000 + a);
+                if (candidateIndexes?.some((index) => unmatched.has(index))) {
+                    await confirmCandidate(candidateIndexes);
+                }
+            }
+            readPosition += bytesRead;
+        }
+    }
+    finally {
+        await handle.close();
+    }
+}
+async function existingSourceFiles(sourcePaths) {
+    const sources = [];
+    for (const sourcePath of sourcePaths) {
+        const stat = await fs.promises.stat(sourcePath).catch(() => undefined);
+        if (stat?.isFile()) {
+            sources.push({ path: sourcePath, size: stat.size });
+        }
+    }
+    return sources;
+}
+async function matchAlignedBlocks(sources, signature, matches) {
+    for (const source of sources) {
+        const handle = await fs.promises.open(source.path, 'r');
+        const block = Buffer.allocUnsafe(signature.blockSize);
+        try {
+            for (let index = 0; index < signature.blocks.length; index++) {
+                if (matches.has(index)) {
+                    continue;
+                }
+                const span = blockSpan(signature, index);
+                if (span.offset + span.length > source.size) {
+                    continue;
+                }
+                await readExactly(handle, block, span.length, span.offset);
+                if (strongHash(block.subarray(0, span.length)) === signature.blocks[index].s) {
+                    matches.set(index, { sourcePath: source.path, sourceOffset: span.offset });
+                }
+            }
+        }
+        finally {
+            await handle.close();
+        }
+    }
+}
+async function matchTrailingPartialBlock(sources, signature, matches) {
+    if (signature.fileSize === 0 || signature.fileSize % signature.blockSize === 0) {
+        return;
+    }
+    const index = signature.blocks.length - 1;
+    if (matches.has(index)) {
+        return;
+    }
+    const span = blockSpan(signature, index);
+    const expectedStrongHash = signature.blocks[index].s;
+    const block = Buffer.allocUnsafe(span.length);
+    for (const source of sources) {
+        if (source.size < span.length) {
+            continue;
+        }
+        const sourceOffset = source.size - span.length;
+        if (sourceOffset === span.offset) {
+            continue; // The aligned pass already checked this offset.
+        }
+        const handle = await fs.promises.open(source.path, 'r');
+        try {
+            await readExactly(handle, block, span.length, sourceOffset);
+            if (strongHash(block) === expectedStrongHash) {
+                matches.set(index, { sourcePath: source.path, sourceOffset });
+                return;
+            }
+        }
+        finally {
+            await handle.close();
+        }
+    }
+}
+function shouldSkipRollingScan(signature, matches) {
+    let missingBytes = 0;
+    for (let index = 0; index < signature.blocks.length; index++) {
+        if (!matches.has(index)) {
+            missingBytes += blockSpan(signature, index).length;
+        }
+    }
+    const matchRatio = signature.blocks.length === 0 ? 1 : matches.size / signature.blocks.length;
+    return matchRatio >= 0.8 && missingBytes <= MAX_ALIGNED_MISS_BYTES;
+}
+async function matchShiftedFullBlocks(sources, signature, matches) {
+    const fullBlockCount = Math.floor(signature.fileSize / signature.blockSize);
+    const unmatched = new Set();
+    const candidatesByWeak = new Map();
+    for (let index = 0; index < fullBlockCount; index++) {
+        if (matches.has(index)) {
+            continue;
+        }
+        unmatched.add(index);
+        const weak = signature.blocks[index].w;
+        const candidates = candidatesByWeak.get(weak) ?? [];
+        candidates.push(index);
+        candidatesByWeak.set(weak, candidates);
+    }
+    for (const source of sources) {
+        if (unmatched.size === 0) {
+            return;
+        }
+        await scanSourceForFullBlocks(source, candidatesByWeak, signature, matches, unmatched);
+    }
+}
+async function findSeedBlockMatches(sourcePaths, signature) {
+    const sources = await existingSourceFiles(sourcePaths);
+    const matches = new Map();
+    await matchAlignedBlocks(sources, signature, matches);
+    await matchTrailingPartialBlock(sources, signature, matches);
+    if (!shouldSkipRollingScan(signature, matches)) {
+        await matchShiftedFullBlocks(sources, signature, matches);
+    }
+    return matches;
+}
+function missingSeedRanges(signature, matches) {
+    const ranges = [];
+    let startBlock;
+    for (let index = 0; index <= signature.blocks.length; index++) {
+        const missing = index < signature.blocks.length && !matches.has(index);
+        if (missing && startBlock === undefined) {
+            startBlock = index;
+        }
+        else if (!missing && startBlock !== undefined) {
+            const first = blockSpan(signature, startBlock);
+            const last = blockSpan(signature, index - 1);
+            ranges.push({
+                start: first.offset,
+                end: last.offset + last.length - 1,
+            });
+            startBlock = undefined;
+        }
+    }
+    return ranges;
+}
+async function copyMatchedBlocks(output, signature, matches) {
+    const sourceHandles = new Map();
+    try {
+        for (const [index, match] of matches) {
+            let source = sourceHandles.get(match.sourcePath);
+            if (!source) {
+                source = await fs.promises.open(match.sourcePath, 'r');
+                sourceHandles.set(match.sourcePath, source);
+            }
+            const span = blockSpan(signature, index);
+            const block = Buffer.allocUnsafe(span.length);
+            await readExactly(source, block, span.length, match.sourceOffset);
+            await writeExactly(output, block, span.offset);
+        }
+    }
+    finally {
+        await Promise.all([...sourceHandles.values()].map((handle) => handle.close()));
+    }
+}
+async function writeExactly(handle, buffer, position) {
+    let offset = 0;
+    while (offset < buffer.byteLength) {
+        const { bytesWritten } = await handle.write(buffer, offset, buffer.byteLength - offset, position + offset);
+        if (bytesWritten <= 0) {
+            throw new Error(`Unable to write reconstructed seed at offset ${position + offset}`);
+        }
+        offset += bytesWritten;
+    }
+}
+async function downloadRange(seedUrl, token, range, fileSize, output, reportBytes) {
+    const response = await nodeProxyTransport.fetch(seedUrl, {
+        method: 'GET',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            Range: `bytes=${range.start}-${range.end}`,
+        },
+    });
+    if (response.status !== 206 || !response.body) {
+        const body = await response.text();
+        throw new Error(`Seed range download failed: ${response.status} ${body}`);
+    }
+    const expectedContentRange = `bytes ${range.start}-${range.end}/${fileSize}`;
+    if (response.headers.get('content-range') !== expectedContentRange) {
+        throw new Error(`Invalid Content-Range for seed: ${response.headers.get('content-range') ?? '<missing>'}`);
+    }
+    const expectedLength = range.end - range.start + 1;
+    let received = 0;
+    const source = Readable.fromWeb(response.body);
+    for await (const value of source) {
+        const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+        if (received + chunk.byteLength > expectedLength) {
+            throw new Error('Seed range response exceeded the requested length');
+        }
+        await writeExactly(output, chunk, range.start + received);
+        received += chunk.byteLength;
+        reportBytes(chunk.byteLength);
+    }
+    if (received !== expectedLength) {
+        throw new Error(`Seed range response was truncated: got ${received}, expected ${expectedLength}`);
+    }
+}
+async function seed_reconstruct_reconstructSeedFromLocalFiles(options) {
+    const expectedSha256 = options.expectedSha256.toLowerCase();
+    const signature = await fetchSeedSignature(options.signatureUrl, options.token, expectedSha256);
+    const uniqueSources = [...new Set(options.sourcePaths.map((sourcePath) => path.resolve(sourcePath)))];
+    const matches = await findSeedBlockMatches(uniqueSources, signature);
+    const ranges = missingSeedRanges(signature, matches);
+    const totalDownloadBytes = ranges.reduce((total, range) => total + range.end - range.start + 1, 0);
+    let downloadedBytes = 0;
+    options.onProgress?.(0, totalDownloadBytes);
+    await fs.promises.mkdir(path.dirname(options.outputPath), { recursive: true });
+    const temporaryPath = `${options.outputPath}.reconstruct-${process.pid}-${crypto
+        .randomBytes(6)
+        .toString('hex')}`;
+    const output = await fs.promises.open(temporaryPath, 'wx');
+    let outputClosed = false;
+    let installed = false;
+    try {
+        await output.truncate(signature.fileSize);
+        await copyMatchedBlocks(output, signature, matches);
+        for (const range of ranges) {
+            await downloadRange(options.seedUrl, options.token, range, signature.fileSize, output, (bytes) => {
+                downloadedBytes += bytes;
+                options.onProgress?.(downloadedBytes, totalDownloadBytes);
+            });
+        }
+        await output.close();
+        outputClosed = true;
+        const actualSha256 = await seed_reconstruct_sha256FileHex(temporaryPath);
+        if (actualSha256 !== expectedSha256) {
+            throw new Error(`Reconstructed seed SHA-256 mismatch: got ${actualSha256}, expected ${expectedSha256}`);
+        }
+        await fs.promises.rm(options.outputPath, { force: true });
+        await fs.promises.rename(temporaryPath, options.outputPath);
+        installed = true;
+    }
+    finally {
+        if (!outputClosed) {
+            await output.close().catch(() => undefined);
+        }
+        if (!installed) {
+            await fs.promises.rm(temporaryPath, { force: true });
+        }
+    }
+    return { downloadedBytes, totalDownloadBytes, matchedBlocks: matches.size };
+}
+//# sourceMappingURL=seed-reconstruct.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/android-basis-cache.mjs
+
+
+
+
+
+
+function buildSyncStateUrl(apiUrl) {
+    return `${apiUrl}/sync/state`;
+}
+function buildSyncSeedUrl(apiUrl, sha256) {
+    return `${apiUrl}/sync/seeds/${encodeURIComponent(sha256)}`;
+}
+async function android_basis_cache_sha256FileHex(filePath) {
+    return await new Promise((resolve, reject) => {
+        const hash = crypto.createHash('sha256');
+        const stream = fs.createReadStream(filePath);
+        stream.on('data', (chunk) => hash.update(chunk));
+        stream.on('error', reject);
+        stream.on('end', () => resolve(hash.digest('hex')));
+    });
+}
+async function fetchAndroidSyncState(apiUrl, token) {
+    const response = await nodeProxyTransport.fetch(buildSyncStateUrl(apiUrl), {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Failed to fetch Android sync state: ${response.status} ${text}`);
+    }
+    return (await response.json());
+}
+/**
+ * Make the local basis cache usable for a delta sync against this specific
+ * instance. The daemon only applies a delta when it holds the exact basis
+ * sha256 the client encoded against (its synced file or a retained seed), so
+ * an existing local basis is verified against the instance's `/sync/state`
+ * and replaced (or dropped) when the instance doesn't know it — otherwise a
+ * warm cache pointed at a fresh instance sends a doomed delta, gets needFull
+ * back, and silently re-uploads the entire APK.
+ */
+async function android_basis_cache_bootstrapAndroidBasisCache(apkPath, basisCacheDir, apiUrl, token, log, onBasisDownloadProgress) {
+    const remotePath = path.basename(apkPath);
+    const basisPath = path.join(basisCacheDir, remotePath);
+    const state = await fetchAndroidSyncState(apiUrl, token).catch((err) => {
+        log('debug', `android sync state unavailable: ${err instanceof Error ? err.message : String(err)}`);
+        return undefined;
+    });
+    if (!state) {
+        // Without state we cannot verify anything; keep whatever local basis exists.
+        return;
+    }
+    // Every sha the daemon can resolve as a delta basis: the currently synced
+    // file at this path plus retained seeds (the daemon's findBasis checks both).
+    const serverShas = new Set();
+    for (const root of state.roots ?? []) {
+        for (const file of root.files ?? []) {
+            if (file.path === remotePath && typeof file.sha256 === 'string') {
+                serverShas.add(file.sha256.toLowerCase());
+            }
+        }
+    }
+    const seeds = [...(state.seeds ?? [])]
+        .filter((seed) => typeof seed.sha256 === 'string' && /^[0-9a-f]{64}$/i.test(seed.sha256))
+        .sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0));
+    for (const seed of seeds) {
+        serverShas.add(seed.sha256.toLowerCase());
+    }
+    let staleBasisPath;
+    if (fs.existsSync(basisPath)) {
+        const basisSha = (await android_basis_cache_sha256FileHex(basisPath)).toLowerCase();
+        if (serverShas.has(basisSha)) {
+            return;
+        }
+        // Keep the stale basis temporarily: even though the instance cannot use it
+        // directly, many of its blocks may be reusable while reconstructing a seed.
+        log('debug', `local basis ${basisSha} unknown to instance; re-seeding basis cache`);
+        staleBasisPath = basisPath;
+    }
+    const localSha = (await android_basis_cache_sha256FileHex(apkPath)).toLowerCase();
+    if (serverShas.has(localSha)) {
+        // The instance already has these exact bytes; the local APK doubles as the
+        // basis without any transfer.
+        await fs.promises.mkdir(path.dirname(basisPath), { recursive: true });
+        await fs.promises.copyFile(apkPath, basisPath);
+        log('debug', `seeded Android basis cache from local APK already known to instance: ${localSha}`);
+        return;
+    }
+    const seed = seeds[0];
+    if (!seed) {
+        if (staleBasisPath) {
+            await fs.promises.rm(staleBasisPath, { force: true });
+        }
+        return;
+    }
+    const seedUrl = buildSyncSeedUrl(apiUrl, seed.sha256);
+    try {
+        const result = await reconstructSeedFromLocalFiles({
+            signatureUrl: `${seedUrl}.sig`,
+            seedUrl,
+            token,
+            sourcePaths: staleBasisPath ? [apkPath, staleBasisPath] : [apkPath],
+            outputPath: basisPath,
+            expectedSha256: seed.sha256,
+            ...(onBasisDownloadProgress ? { onProgress: onBasisDownloadProgress } : {}),
+        });
+        log('debug', `reconstructed Android basis seed ${seed.sha256}: matched=${result.matchedBlocks} downloaded=${result.downloadedBytes}`);
+    }
+    catch (err) {
+        log('debug', `basis seed reconstruction unavailable; downloading full seed: ${err instanceof Error ? err.message : String(err)}`);
+        // A failed reconstruction never replaces basisPath, so it is safe to
+        // truncate the stale basis in place for the full-download fallback.
+        onBasisDownloadProgress?.(0, seed.size ?? 0);
+        await downloadFileToLocalPath(seedUrl, token, basisPath, onBasisDownloadProgress);
+        log('debug', `seeded Android basis cache from full instance seed: ${seed.sha256}`);
+    }
+}
+//# sourceMappingURL=android-basis-cache.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/instance-client.mjs
+
+
+
+
+
+
 
 
 
@@ -88526,6 +90146,23 @@ function buildDownloadUrl(apiUrl) {
 function assertBandwidthKbps(field, value) {
     if (!Number.isInteger(value) || value < 0) {
         throw new Error(`${field} must be a non-negative integer Kbps value`);
+    }
+}
+async function assertApkFile(filePath) {
+    const st = await fs.promises.stat(filePath).catch(() => null);
+    if (!st?.isFile()) {
+        throw new Error(`APK file not found: ${filePath}`);
+    }
+    const fd = await fs.promises.open(filePath, 'r');
+    try {
+        const buf = Buffer.alloc(4);
+        const { bytesRead } = await fd.read(buf, 0, 4, 0);
+        if (bytesRead < 4 || buf[0] !== 0x50 || buf[1] !== 0x4b) {
+            throw new Error(`File is not an APK/ZIP archive: ${filePath}`);
+        }
+    }
+    finally {
+        await fd.close();
     }
 }
 var RecordingQuality;
@@ -88558,6 +90195,9 @@ async function createInstanceClient(options) {
     let lastError;
     const pendingRequests = new Map();
     const pendingAssetRequestsByUrl = new Map();
+    // App exit callbacks are keyed by execId. They intentionally survive transient
+    // WebSocket reconnects and are one-shot once a matching appExit is processed.
+    const appExitCallbacks = new Map();
     const stateChangeCallbacks = new Set();
     const logger = {
         debug: (...args) => {
@@ -88682,6 +90322,10 @@ async function createInstanceClient(options) {
                 case 'scrollScreenResult':
                 case 'scrollElementResult':
                 case 'openUrlResult':
+                case 'launchAppResult':
+                case 'terminateAppResult':
+                case 'watchAppResult':
+                case 'unwatchAppResult':
                 case 'playOnMicrophoneResult':
                 case 'setWifiBandwidthResult':
                 case 'startRecordingResult':
@@ -88766,6 +90410,33 @@ async function createInstanceClient(options) {
                         logger.debug(`Received screenshot data URI for request ${screenshotMessage.id}.`);
                         resolvePendingRequest(screenshotMessage.id, {
                             dataUri: screenshotMessage.dataUri,
+                        });
+                        break;
+                    }
+                    case 'appExit': {
+                        const exitMessage = message;
+                        const { execId, packageName, reason } = exitMessage;
+                        if (typeof execId !== 'string' || typeof packageName !== 'string' || typeof reason !== 'string') {
+                            logger.warn('Received malformed appExit message:', message);
+                            break;
+                        }
+                        const callback = appExitCallbacks.get(execId);
+                        if (!callback) {
+                            logger.debug(`Received appExit for unknown or already handled execId: ${execId}`);
+                            break;
+                        }
+                        appExitCallbacks.delete(execId);
+                        const logs = Array.isArray(exitMessage.logs) ? exitMessage.logs.map(String) : [];
+                        const info = {
+                            packageName,
+                            reason,
+                            ...(exitMessage.crash ? { crash: exitMessage.crash } : {}),
+                            ...(exitMessage.anr ? { anr: exitMessage.anr } : {}),
+                        };
+                        void Promise.resolve()
+                            .then(() => callback(logs, info))
+                            .catch((error) => {
+                            logger.error(`Error in onExit callback for execId ${execId}:`, error);
                         });
                         break;
                     }
@@ -88890,6 +90561,9 @@ async function createInstanceClient(options) {
                         scrollScreen,
                         scrollElement,
                         openUrl,
+                        launchApp,
+                        terminateApp,
+                        watchApp,
                         playOnMicrophone,
                         setWifiBandwidth,
                         startRecording,
@@ -88898,6 +90572,7 @@ async function createInstanceClient(options) {
                         disconnect,
                         startAdbTunnel,
                         sendAsset,
+                        syncApp,
                         getConnectionState,
                         onConnectionStateChange,
                     });
@@ -88968,6 +90643,51 @@ async function createInstanceClient(options) {
             const result = await sendRequest('openUrl', { url });
             return {
                 url: typeof result.url === 'string' ? result.url : url,
+            };
+        };
+        /**
+         * Registers a one-shot exit callback under a fresh execId, runs the request that
+         * carries it (launchApp or watchApp), and unregisters the callback if the request
+         * fails so it can never fire for a watch the server never accepted.
+         */
+        const withExitCallback = async (idPrefix, onExit, send) => {
+            const execId = nextRequestId(idPrefix);
+            appExitCallbacks.set(execId, onExit);
+            try {
+                return { execId, result: await send(execId) };
+            }
+            catch (error) {
+                appExitCallbacks.delete(execId);
+                throw error;
+            }
+        };
+        const launchApp = async (packageName, launchOptions = {}) => {
+            const sendLaunch = (execId) => {
+                const request = { packageName };
+                if (launchOptions.mode)
+                    request.mode = launchOptions.mode;
+                if (execId)
+                    request.execId = execId;
+                return sendRequest('launchApp', request, 60000);
+            };
+            const result = launchOptions.onExit ?
+                (await withExitCallback('exec', launchOptions.onExit, sendLaunch)).result
+                : await sendLaunch();
+            return {
+                packageName: typeof result.packageName === 'string' ? result.packageName : packageName,
+            };
+        };
+        const terminateApp = async (packageName) => {
+            await sendRequest('terminateApp', { packageName });
+        };
+        const watchApp = async (packageName, onExit) => {
+            const { execId } = await withExitCallback('watch', onExit, (execId) => sendRequest('watchApp', { packageName, execId }));
+            return {
+                execId,
+                stop: async () => {
+                    appExitCallbacks.delete(execId);
+                    await sendRequest('unwatchApp', { execId });
+                },
             };
         };
         const playOnMicrophone = async (inputPath, microphoneOptions) => {
@@ -89059,7 +90779,7 @@ async function createInstanceClient(options) {
             });
             try {
                 await new Promise((resolve, reject) => {
-                    exec(`${options.adbPath ?? 'adb'} connect ${tunnel.address.address}:${tunnel.address.port}`, (err) => {
+                    execFile(options.adbPath ?? 'adb', ['connect', `${tunnel.address.address}:${tunnel.address.port}`], (err) => {
                         if (err)
                             return reject(err);
                         resolve();
@@ -89126,6 +90846,47 @@ async function createInstanceClient(options) {
                         reject(err);
                     }
                 });
+            });
+        };
+        const syncApp = async (apkPath, syncOpts) => {
+            const resolvedPath = path.resolve(apkPath);
+            await assertApkFile(resolvedPath);
+            const fileName = path.basename(resolvedPath);
+            const hash = crypto.createHash('sha1').update(resolvedPath).digest('hex').slice(0, 8);
+            const cacheKey = `limsync-cache-android-${fileName}-${hash}`;
+            const basisCacheDir = syncOpts?.basisCacheDir ?? path.join(os.tmpdir(), cacheKey);
+            const syncLog = (level, msg) => {
+                switch (level) {
+                    case 'debug':
+                        logger.debug(msg);
+                        break;
+                    case 'info':
+                        logger.info(msg);
+                        break;
+                    case 'warn':
+                        logger.warn(msg);
+                        break;
+                    case 'error':
+                        logger.error(msg);
+                        break;
+                    default:
+                        logger.info(msg);
+                }
+            };
+            await fs.promises.mkdir(basisCacheDir, { recursive: true });
+            await bootstrapAndroidBasisCache(resolvedPath, basisCacheDir, options.apiUrl, options.token, syncLog, syncOpts?.onBasisDownloadProgress);
+            return await syncFolder(resolvedPath, {
+                apiUrl: options.apiUrl,
+                token: options.token,
+                udid: cacheKey,
+                basisCacheDir,
+                install: syncOpts?.install ?? true,
+                launchMode: syncOpts?.launchMode ?? 'ForegroundIfRunning',
+                watch: syncOpts?.watch ?? false,
+                ignoreFn: () => false,
+                log: syncLog,
+                compression: 'identity',
+                ...(syncOpts?.onSyncComplete ? { onSyncComplete: syncOpts.onSyncComplete } : {}),
             });
         };
         // Start the initial connection
@@ -89367,13 +91128,8 @@ function app_archive_watchAppArchive(opts) {
     let inFlight = false;
     let queued = false;
     let closed = false;
+    let activeRun;
     const run = async () => {
-        if (closed)
-            return;
-        if (inFlight) {
-            queued = true;
-            return;
-        }
         inFlight = true;
         try {
             const ready = await waitForStableArchiveFile(archivePath, () => closed);
@@ -89392,11 +91148,26 @@ function app_archive_watchAppArchive(opts) {
         }
         finally {
             inFlight = false;
-            if (queued) {
+            if (queued && !closed) {
                 queued = false;
-                void run();
+                startRun();
             }
         }
+    };
+    const startRun = () => {
+        if (closed)
+            return;
+        if (inFlight) {
+            queued = true;
+            return;
+        }
+        const promise = run();
+        activeRun = promise;
+        void promise.finally(() => {
+            if (activeRun === promise) {
+                activeRun = undefined;
+            }
+        });
     };
     const schedule = () => {
         if (closed)
@@ -89405,7 +91176,7 @@ function app_archive_watchAppArchive(opts) {
             clearTimeout(timer);
         timer = setTimeout(() => {
             timer = undefined;
-            void run();
+            startRun();
         }, 500);
     };
     const watcher = fs.watch(parentDir, (_eventType, filename) => {
@@ -89415,13 +91186,15 @@ function app_archive_watchAppArchive(opts) {
     });
     log('debug', `watchAppArchive: ${archivePath}`);
     return {
-        close: () => {
+        close: async () => {
             closed = true;
+            queued = false;
             if (timer) {
                 clearTimeout(timer);
                 timer = undefined;
             }
             watcher.close();
+            await activeRun;
         },
     };
 }
@@ -89429,6 +91202,11 @@ function app_archive_watchAppArchive(opts) {
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/http-proxy.mjs
 
 
+
+/**
+ * Legacy origin-form reverse proxy: forwards every request on the local port
+ * to `remoteBaseUrl`. New callers should prefer `startForwardHttpProxy`.
+ */
 async function startHttpProxy({ localPort = 0, remoteBaseUrl, headers = {}, }) {
     const base = trimTrailingSlashes(remoteBaseUrl);
     const server = http.createServer((req, res) => {
@@ -89463,6 +91241,114 @@ async function startHttpProxy({ localPort = 0, remoteBaseUrl, headers = {}, }) {
         port: address.port,
         close: () => closeServer(server),
     };
+}
+// Hop-by-hop headers must not be forwarded by an HTTP proxy (RFC 9110 §7.6.1).
+const HOP_BY_HOP_HEADERS = new Set([
+    'connection',
+    'proxy-connection',
+    'keep-alive',
+    'proxy-authorization',
+    'proxy-authenticate',
+    'te',
+    'trailer',
+    'upgrade',
+]);
+function withoutHopByHop(headers) {
+    return Object.fromEntries(Object.entries(headers).filter(([name]) => !HOP_BY_HOP_HEADERS.has(name)));
+}
+/**
+ * Single-destination HTTP forward proxy (absolute-form request targets, as sent
+ * by clients configured with e.g. JVM -Dhttp.proxyHost). Loopback requests on
+ * `matchPort` are forwarded to `remoteBaseUrl`; every other target is refused,
+ * so the proxy can only ever reach the destination it was configured with.
+ */
+async function startForwardHttpProxy({ matchPort, remoteBaseUrl, headers = {}, }) {
+    const base = trimTrailingSlashes(remoteBaseUrl);
+    // The driver polls the runner continuously, so upstream connections must be
+    // reused instead of paying a TCP/TLS handshake per driver call.
+    const agents = {
+        'http:': new http.Agent({ keepAlive: true }),
+        'https:': new https.Agent({ keepAlive: true }),
+    };
+    const server = http.createServer((req, res) => {
+        let target;
+        try {
+            target = new URL(req.url ?? '');
+        }
+        catch {
+            // Falls through to the guard below.
+        }
+        if (!target || (target.protocol !== 'http:' && target.protocol !== 'https:')) {
+            res.writeHead(400, { 'content-type': 'text/plain' });
+            res.end('Limrun forward proxy only accepts absolute-form request targets.');
+            return;
+        }
+        // matchPort is always explicit (an ephemeral port or 7001), so a target
+        // without a port can never match. Anything else is refused rather than
+        // forwarded: the requested host never selects the destination, so this
+        // proxy cannot be pointed at another host.
+        if (!isLoopbackHost(target.hostname) || Number(target.port) !== matchPort) {
+            res.writeHead(403, { 'content-type': 'text/plain' });
+            res.end(`Limrun forward proxy only forwards 127.0.0.1:${matchPort}.`);
+            return;
+        }
+        const upstreamUrl = new URL(`${base}${target.pathname}${target.search}`);
+        const transport = upstreamUrl.protocol === 'https:' ? https : http;
+        const upstream = transport.request(upstreamUrl, {
+            agent: agents[upstreamUrl.protocol],
+            method: req.method,
+            headers: {
+                ...withoutHopByHop(req.headers),
+                host: upstreamUrl.host,
+                ...headers,
+            },
+        }, (upstreamResponse) => {
+            res.writeHead(upstreamResponse.statusCode ?? 502, withoutHopByHop(upstreamResponse.headers));
+            // pipeline tears down whichever side is still alive when the other one
+            // dies, instead of leaking it or raising an unhandled 'error'.
+            pipeline(upstreamResponse, res, () => { });
+        });
+        upstream.on('error', (error) => {
+            if (res.headersSent) {
+                // Mid-stream failure: abort instead of appending error text to a
+                // partial body.
+                res.destroy(error);
+                return;
+            }
+            res.writeHead(502, { 'content-type': 'text/plain' });
+            res.end(error.message);
+        });
+        // A client that aborts mid-call must not leak the upstream socket.
+        res.on('close', () => {
+            if (!res.writableFinished) {
+                upstream.destroy();
+            }
+        });
+        pipeline(req, upstream, () => { });
+    });
+    // HTTPS clients open CONNECT tunnels; we deliberately keep TLS traffic off this
+    // proxy (only http.proxyHost is set on the JVM side), so refuse loudly instead
+    // of tunneling blind.
+    server.on('connect', (_req, socket) => {
+        socket.end('HTTP/1.1 501 Not Implemented\r\n\r\nLimrun forward proxy does not tunnel CONNECT.\r\n');
+    });
+    await listen(server, 0);
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+        throw new Error('Failed to start HTTP forward proxy.');
+    }
+    return {
+        port: address.port,
+        close: async () => {
+            await closeServer(server);
+            agents['http:'].destroy();
+            agents['https:'].destroy();
+        },
+    };
+}
+function isLoopbackHost(hostname) {
+    // URL.hostname keeps brackets around IPv6 hosts.
+    return (hostname === 'localhost' || hostname === '[::1]' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname));
 }
 function trimTrailingSlashes(value) {
     return value.replace(/\/+$/, '');
@@ -89558,6 +91444,9 @@ async function createXcrunShim(options) {
     return dir;
 }
 async function handleShimmedXcrun(client, udid, args) {
+    if (args[0] === 'devicectl') {
+        return devicectlListDevices(args);
+    }
     if (args[0] !== 'simctl') {
         return { code: 127, stdout: '', stderr: `unsupported xcrun command: ${args.join(' ')}` };
     }
@@ -89596,6 +91485,42 @@ async function handleShimmedXcrun(client, udid, args) {
         return { code: 64, stdout: '', stderr: `limrun xcrun shim does not support simctl ${command ?? ''}.` };
     }
     return await client.simctl(simctlArgs).wait();
+}
+// There are never physical devices behind the shim, so `devicectl list
+// devices` gets an empty device list in the shape Maestro's picker parses.
+// Flags can precede the subcommand (devicectl --json-output <path> list
+// devices), so match on positionals.
+function devicectlListDevices(args) {
+    const positionals = [];
+    for (let i = 1; i < args.length; i++) {
+        if (args[i] === '--json-output') {
+            i++;
+            continue;
+        }
+        if (args[i].startsWith('-'))
+            continue;
+        positionals.push(args[i]);
+    }
+    if (positionals[0] !== 'list' || positionals[1] !== 'devices') {
+        return { code: 127, stdout: '', stderr: `unsupported devicectl command: ${args.join(' ')}` };
+    }
+    const payload = JSON.stringify({ result: { devices: [] } });
+    const jsonOutIndex = args.indexOf('--json-output');
+    const jsonOutPath = jsonOutIndex === -1 ? undefined : args[jsonOutIndex + 1];
+    if (jsonOutPath && jsonOutPath !== '-') {
+        try {
+            fs.writeFileSync(jsonOutPath, payload);
+        }
+        catch (error) {
+            return {
+                code: 1,
+                stdout: '',
+                stderr: `could not write devicectl output to ${jsonOutPath}: ${error instanceof Error ? error.message : String(error)}`,
+            };
+        }
+        return { code: 0, stdout: '', stderr: '' };
+    }
+    return { code: 0, stdout: `${payload}\n`, stderr: '' };
 }
 function simctlList(udid, simctlArgs) {
     if (!simctlArgs.includes('-j')) {
@@ -89707,8 +91632,9 @@ function toSimctlListApps(apps) {
 }
 function xcrunShimSource(options) {
     // Keep the executable tiny: it decides whether this is a Limrun-targeted
-    // simctl call, then asks the local shim server to perform the real work.
-    // Non-Limrun calls still delegate to the host xcrun.
+    // simctl call (or a devicectl device enumeration), then asks the local shim
+    // server to perform the real work. Non-Limrun calls still delegate to the
+    // host xcrun.
     const embeddedShimUrl = options ? JSON.stringify(options.shimUrl) : 'process.env.LIMRUN_XCRUN_SHIM_URL';
     const embeddedUdid = options ? JSON.stringify(options.udid) : 'process.env.LIMRUN_IOS_UDID';
     return `#!/usr/bin/env node
@@ -89732,7 +91658,26 @@ function fail(message) {
   process.exit(64);
 }
 
-if (args[0] !== 'simctl') {
+// Physical-device enumeration (e.g. Maestro's device picker) is answered by
+// the shim server; real devicectl does not exist off macOS. Every other
+// devicectl subcommand delegates. Flags can precede the subcommand
+// (devicectl --json-output <path> list devices), so match on positionals.
+function devicectlPositionals(args) {
+  const positionals = [];
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === '--json-output') {
+      i++;
+      continue;
+    }
+    if (args[i].startsWith('-')) continue;
+    positionals.push(args[i]);
+  }
+  return positionals;
+}
+const devicectlSubcommand = args[0] === 'devicectl' ? devicectlPositionals(args) : [];
+const isDevicectlListDevices = devicectlSubcommand[0] === 'list' && devicectlSubcommand[1] === 'devices';
+
+if (args[0] !== 'simctl' && !isDevicectlListDevices) {
   delegate();
 }
 
@@ -89742,21 +91687,23 @@ if (!shimUrl || !udid) {
   fail('LIMRUN_XCRUN_SHIM_URL and LIMRUN_IOS_UDID are required.');
 }
 
-const simctlArgs = args.slice(1);
-const command = simctlArgs[0];
 function simctlTarget(command, simctlArgs) {
   if (command === 'launch') {
     return simctlArgs.slice(1).find((arg) => !arg.startsWith('-'));
   }
   return simctlArgs[1];
 }
-const target = simctlTarget(command, simctlArgs);
 function isLimrunTarget(value) {
   return value === udid || value === 'booted';
 }
 
-if (command !== 'list' && !isLimrunTarget(target)) {
-  delegate();
+if (args[0] === 'simctl') {
+  const simctlArgs = args.slice(1);
+  const command = simctlArgs[0];
+  const target = simctlTarget(command, simctlArgs);
+  if (command !== 'list' && !isLimrunTarget(target)) {
+    delegate();
+  }
 }
 
 const parsed = new URL(shimUrl);
@@ -89853,6 +91800,8 @@ function sendJson(res, statusCode, payload) {
 const ACTIVE_RECORDING_FILENAME = 'recording.mp4';
 const REVERSE_TUNNEL_REMOTE_PORT_MIN = 57090;
 const REVERSE_TUNNEL_REMOTE_PORT_MAX = 57099;
+/** Default tapElement timeout; see TapElementOptions.timeoutMs. */
+const TAP_ELEMENT_TIMEOUT_MS = 90000;
 function ios_client_buildDownloadUrl(apiUrl) {
     return `${apiUrl}/files?name=${encodeURIComponent(ACTIVE_RECORDING_FILENAME)}`;
 }
@@ -90161,6 +92110,7 @@ async function ios_client_createInstanceClient(options) {
     const pendingRequests = new Map();
     // Simctl uses streaming, so it needs separate handling
     const simctlExecutions = new Map();
+    const serverNotifications = new Map();
     const xcrunShimCleanups = [];
     const httpProxyCleanups = [];
     const stateChangeCallbacks = new Set();
@@ -90237,6 +92187,39 @@ async function ios_client_createInstanceClient(options) {
         cleanupConnection();
         cleanupClientResources();
     };
+    const registerServerNotification = (type, notificationId, handler) => {
+        const handlers = serverNotifications.get(type) ?? new Map();
+        handlers.set(notificationId, handler);
+        serverNotifications.set(type, handlers);
+    };
+    const takeServerNotification = (type, notificationId) => {
+        const handlers = serverNotifications.get(type);
+        if (!handlers) {
+            return undefined;
+        }
+        const handler = handlers.get(notificationId);
+        if (!handler) {
+            return undefined;
+        }
+        handlers.delete(notificationId);
+        if (handlers.size === 0) {
+            serverNotifications.delete(type);
+        }
+        return handler;
+    };
+    const deleteServerNotification = (type, notificationId) => {
+        const handlers = serverNotifications.get(type);
+        if (!handlers) {
+            return;
+        }
+        handlers.delete(notificationId);
+        if (handlers.size === 0) {
+            serverNotifications.delete(type);
+        }
+    };
+    const clearServerNotifications = () => {
+        serverNotifications.clear();
+    };
     let pingInterval;
     const keepAliveSessionId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
     return new Promise((resolveConnection, rejectConnection) => {
@@ -90250,11 +92233,13 @@ async function ios_client_createInstanceClient(options) {
             if (isNonRetryableError(lastError ?? '')) {
                 logger.error(`Skipping reconnection (non-retryable error): ${lastError}`);
                 updateConnectionState('disconnected');
+                clearServerNotifications();
                 return;
             }
             if (reconnectAttempts >= maxReconnectAttempts) {
                 logger.error(`Max reconnection attempts (${maxReconnectAttempts}) reached. Giving up.`);
                 updateConnectionState('disconnected');
+                clearServerNotifications();
                 return;
             }
             const currentDelay = Math.min(reconnectDelay * Math.pow(2, reconnectAttempts), maxReconnectDelay);
@@ -90278,6 +92263,7 @@ async function ios_client_createInstanceClient(options) {
             return {
                 type: request['type'],
                 id: request['id'],
+                execId: request['execId'],
                 bundleId: request['bundleId'],
                 mode: request['mode'],
                 runtime: runtime ? { kind: runtime.kind, version: runtime.version } : undefined,
@@ -90308,6 +92294,35 @@ async function ios_client_createInstanceClient(options) {
                 });
             });
         };
+        const splitAppLogTail = (logs) => {
+            if (logs.length === 0) {
+                return [];
+            }
+            return logs.split(/\r?\n/);
+        };
+        const handleAppExit = (message) => {
+            if (message.type !== 'appExit') {
+                return false;
+            }
+            const { execId, bundleId, logLineCount } = message;
+            if (typeof execId !== 'string' ||
+                typeof bundleId !== 'string' ||
+                typeof logLineCount !== 'number' ||
+                !Number.isInteger(logLineCount) ||
+                logLineCount < 0) {
+                logger.warn('Received malformed appExit message:', message);
+                return true;
+            }
+            const notification = takeServerNotification('appExit', execId);
+            if (!notification) {
+                logger.debug(`Received appExit for unknown or already handled execId: ${execId}`);
+                return true;
+            }
+            void notification(message).catch((error) => {
+                logger.error(`Error processing appExit notification for execId ${execId}:`, error);
+            });
+            return true;
+        };
         // Response handlers - transform raw responses to typed results
         const responseHandlers = {
             screenshotResult: (msg) => ({
@@ -90320,6 +92335,7 @@ async function ios_client_createInstanceClient(options) {
             tapElementResult: (msg) => ({
                 elementLabel: msg.elementLabel,
                 elementType: msg.elementType,
+                method: msg.method,
             }),
             incrementElementResult: (msg) => ({ elementLabel: msg.elementLabel }),
             decrementElementResult: (msg) => ({ elementLabel: msg.elementLabel }),
@@ -90349,6 +92365,13 @@ async function ios_client_createInstanceClient(options) {
             }),
             startVideoRecordingResult: () => undefined,
             stopVideoRecordingResult: () => undefined,
+            cameraControlResult: () => undefined,
+            playOnMicrophoneResult: (msg) => ({
+                duration: msg.duration ?? 0,
+                once: msg.once ?? false,
+            }),
+            stopMicrophonePlaybackResult: () => undefined,
+            microphoneStatusResult: (msg) => msg.status ?? { source: 'silence' },
             setOrientationResult: () => undefined,
             scrollResult: () => undefined,
             performActionsResult: (msg) => ({
@@ -90377,6 +92400,9 @@ async function ios_client_createInstanceClient(options) {
                 }
                 catch (e) {
                     logger.error({ data, error: e }, 'Failed to parse JSON message');
+                    return;
+                }
+                if (handleAppExit(message)) {
                     return;
                 }
                 // Handle simctl streaming separately (it uses multiple messages per request)
@@ -90463,6 +92489,7 @@ async function ios_client_createInstanceClient(options) {
                     cleanup();
                     updateConnectionState('disconnected');
                     failPendingRequests('Non-retryable error');
+                    clearServerNotifications();
                     logger.debug('Non-retryable error. Closing connection.');
                 }
             });
@@ -90516,6 +92543,9 @@ async function ios_client_createInstanceClient(options) {
                         performActions,
                         startRecording,
                         stopRecording,
+                        playOnMicrophone,
+                        stopMicrophonePlayback,
+                        microphoneStatus,
                         keepAlive,
                         syncApp,
                         setStoreKitConfig,
@@ -90524,6 +92554,7 @@ async function ios_client_createInstanceClient(options) {
                         softReset,
                         startReverseTunnel,
                         startHttpProxy,
+                        startForwardHttpProxy,
                         disconnect,
                         getConnectionState,
                         onConnectionStateChange,
@@ -90531,7 +92562,11 @@ async function ios_client_createInstanceClient(options) {
                         xcrun,
                         startXcrunShim,
                         xcodebuild,
-                        cp,
+                        pushFile,
+                        pullFile,
+                        deleteFile,
+                        setCameraVideo,
+                        clearCameraVideo,
                         lsof,
                         deviceInfo: cachedDeviceInfo,
                     });
@@ -90569,8 +92604,8 @@ async function ios_client_createInstanceClient(options) {
         const tapWithScreenSize = (x, y, screenWidth, screenHeight) => {
             return sendRequest('tap', { x, y, screenWidth, screenHeight });
         };
-        const tapElement = (selector) => {
-            return sendRequest('tapElement', { selector });
+        const tapElement = (selector, options) => {
+            return sendRequest('tapElement', { selector, activate: options?.activate }, undefined, options?.timeoutMs ?? TAP_ELEMENT_TIMEOUT_MS);
         };
         const incrementElement = (selector) => {
             return sendRequest('incrementElement', { selector });
@@ -90579,7 +92614,15 @@ async function ios_client_createInstanceClient(options) {
             return sendRequest('decrementElement', { selector });
         };
         const setElementValue = (text, selector) => {
-            return sendRequest('setElementValue', { text, selector });
+            // No selector targets the focused element; the server resolves it.
+            // JSON IPC turns undefined into null, so normalize back: the payload
+            // must omit the selector key, not send null.
+            const target = selector ?? undefined;
+            return sendRequest('setElementValue', {
+                text,
+                selector: target,
+                focused: target ? undefined : true,
+            });
         };
         const typeText = (text, pressEnter) => {
             return sendRequest('typeText', { text, pressEnter });
@@ -90599,10 +92642,43 @@ async function ios_client_createInstanceClient(options) {
                 return Promise.reject(new Error('launchApp runtime launches require RelaunchIfRunning so runtime injection is applied.'));
             }
             const mode = launchOptions.runtime ? 'RelaunchIfRunning' : launchOptions.mode;
+            const onExit = launchOptions.onExit;
+            const execId = onExit ? generateId() : undefined;
+            if (execId && onExit) {
+                registerServerNotification('appExit', execId, async (message) => {
+                    const { bundleId, logLineCount } = message;
+                    if (typeof bundleId !== 'string' ||
+                        typeof logLineCount !== 'number' ||
+                        !Number.isInteger(logLineCount) ||
+                        logLineCount < 0) {
+                        logger.warn(`Received malformed appExit payload for execId ${execId}:`, message);
+                        return;
+                    }
+                    let logs = [];
+                    try {
+                        logs = splitAppLogTail(await sendRequest('appLogTail', { bundleId, lines: logLineCount }));
+                    }
+                    catch (error) {
+                        logger.error(`Failed to fetch app logs for exit execId ${execId}:`, error);
+                    }
+                    try {
+                        await onExit(logs);
+                    }
+                    catch (error) {
+                        logger.error(`Error in onExit callback for execId ${execId}:`, error);
+                    }
+                });
+            }
             return sendRequest('launchApp', {
                 bundleId,
                 mode,
                 runtime: launchOptions.runtime,
+                execId,
+            }).catch((error) => {
+                if (execId) {
+                    deleteServerNotification('appExit', execId);
+                }
+                throw error;
             });
         };
         const terminateApp = (bundleId) => {
@@ -90679,6 +92755,23 @@ async function ios_client_createInstanceClient(options) {
             }
             return downloadUrl;
         };
+        const playOnMicrophone = async (audioPath, microphoneOptions) => {
+            if (!audioPath) {
+                throw new Error('path must be a non-empty string');
+            }
+            // JSON.stringify drops undefined values, so an unset `once` is
+            // simply omitted from the wire message (host defaults to looping).
+            return sendRequest('playOnMicrophone', {
+                path: audioPath,
+                once: microphoneOptions?.once,
+            });
+        };
+        const stopMicrophonePlayback = async () => {
+            await sendRequest('stopMicrophonePlayback');
+        };
+        const microphoneStatus = async () => {
+            return sendRequest('microphoneStatus');
+        };
         const keepAlive = () => {
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 return;
@@ -90732,9 +92825,9 @@ async function ios_client_createInstanceClient(options) {
                 basisCacheDir,
                 log: syncLog,
                 install: opts?.install ?? true,
-                maxPatchBytes: opts?.maxPatchBytes ?? 4 * 1024 * 1024,
                 launchMode: opts?.launchMode ?? 'ForegroundIfRunning',
                 watch: preparedApp.isArchive ? false : shouldWatch,
+                ...(opts?.onSyncComplete ? { onSyncComplete: opts.onSyncComplete } : {}),
             };
             const result = await syncFolder(appBundlePath, folderSyncOpts);
             if (!preparedApp.isArchive || !preparedApp.archivePath || !shouldWatch) {
@@ -90744,13 +92837,15 @@ async function ios_client_createInstanceClient(options) {
                 archivePath: preparedApp.archivePath,
                 log: syncLog,
                 onExtracted: async () => {
+                    // syncFolder fires onSyncComplete itself, so archive re-syncs
+                    // surface through the same callback.
                     await syncFolder(appBundlePath, folderSyncOpts);
                 },
             });
             return {
                 ...result,
-                stopWatching: () => {
-                    archiveWatcher.close();
+                stopWatching: async () => {
+                    await archiveWatcher.close();
                 },
             };
         };
@@ -90826,9 +92921,19 @@ async function ios_client_createInstanceClient(options) {
             });
             return execution;
         };
-        const cp = async (name, filePath) => {
+        const buildFilesUrl = (name, opts) => {
+            const params = new URLSearchParams({ name });
+            if (opts?.bundleId) {
+                params.set('bundleId', opts.bundleId);
+                if (opts.containerType) {
+                    params.set('containerType', opts.containerType);
+                }
+            }
+            return `${options.apiUrl}/files?${params.toString()}`;
+        };
+        const pushFile = async (filePath, destination, opts) => {
             const fileStream = fs.createReadStream(filePath);
-            const uploadUrl = `${options.apiUrl}/files?name=${encodeURIComponent(name)}`;
+            const uploadUrl = buildFilesUrl(destination, opts);
             try {
                 // Node's fetch (undici) supports streaming request bodies but TS DOM types may not include
                 // `duplex` and may not accept Node ReadStreams as BodyInit in some configs.
@@ -90855,14 +92960,56 @@ async function ios_client_createInstanceClient(options) {
                 throw err;
             }
         };
+        const pullFile = async (name, opts) => {
+            const response = await nodeProxyTransport.fetch(buildFilesUrl(name, opts), {
+                method: 'GET',
+                headers: {
+                    Authorization: `Bearer ${options.token}`,
+                },
+            });
+            if (!response.ok) {
+                const errorBody = await response.text();
+                throw new Error(`Download of '${name}' failed: ${response.status} ${errorBody}`);
+            }
+            return Buffer.from(await response.arrayBuffer());
+        };
+        const deleteFile = async (name, opts) => {
+            const response = await nodeProxyTransport.fetch(buildFilesUrl(name, opts), {
+                method: 'DELETE',
+                headers: {
+                    Authorization: `Bearer ${options.token}`,
+                },
+            });
+            if (!response.ok) {
+                const errorBody = await response.text();
+                throw new Error(`Deletion of '${name}' failed: ${response.status} ${errorBody}`);
+            }
+        };
+        const setCameraVideo = async (filePath, cameraOptions) => {
+            // Fixed prefix so repeat calls with the same file overwrite the
+            // previous upload instead of accumulating staging files.
+            const destination = `limrun-camera-${path.basename(filePath)}`;
+            const remotePath = await pushFile(filePath, destination);
+            await sendRequest('cameraControl', {
+                action: 'setSource',
+                source: 'video',
+                arg: remotePath,
+                loop: cameraOptions?.loop ?? true,
+            });
+        };
+        const clearCameraVideo = () => {
+            return sendRequest('cameraControl', { action: 'reset' });
+        };
         const setStoreKitConfig = async (bundleId, storekit) => {
             const body = Buffer.isBuffer(storekit) ? storekit : Buffer.from(storekit);
             const url = `${options.apiUrl}/payments/storeKitConfigs/${encodeURIComponent(bundleId)}`;
+            // No manual Content-Length: fetch computes it from the Buffer, and setting
+            // it too makes Node 22's built-in fetch send a duplicate that the npm undici
+            // proxy dispatcher rejects whenever HTTP(S)_PROXY is set.
             const response = await nodeProxyTransport.fetch(url, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/octet-stream',
-                    'Content-Length': body.length.toString(),
                     Authorization: `Bearer ${options.token}`,
                 },
                 body: body,
@@ -90970,11 +93117,24 @@ async function ios_client_createInstanceClient(options) {
             httpProxyCleanups.push(proxy.close);
             return proxy.port;
         };
+        const startForwardHttpProxy = async (proxyOptions) => {
+            assertPort(proxyOptions.matchPort, 'matchPort', 1, 65535);
+            const proxy = await startLocalForwardHttpProxy({
+                matchPort: proxyOptions.matchPort,
+                remoteBaseUrl: proxyOptions.remoteBaseUrl,
+                headers: {
+                    authorization: `Bearer ${options.token}`,
+                },
+            });
+            httpProxyCleanups.push(proxy.close);
+            return proxy.port;
+        };
         const disconnect = () => {
             intentionalDisconnect = true;
             cleanup();
             updateConnectionState('disconnected');
             failPendingRequests('Intentional disconnect');
+            clearServerNotifications();
             logger.debug('Intentionally disconnected from WebSocket.');
         };
         const getConnectionState = () => {
@@ -90990,10 +93150,135 @@ async function ios_client_createInstanceClient(options) {
     });
 }
 //# sourceMappingURL=ios-client.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/ios-maestro.mjs
+
+
+
+const MAESTRO_RUNNER_BUNDLE_ID = 'dev.mobile.maestro-driver-iosUITests.xctrunner';
+/** Port the patched Maestro XCTest runner listens on inside the simulator. */
+const MAESTRO_RUNNER_PORT = 22087;
+// Maestro installs as a .bat/.cmd wrapper on Windows, which spawn can only
+// execute through a shell.
+const maestroSpawnOptions = { shell: process.platform === 'win32' };
+/**
+ * Wire a locally installed stock Maestro CLI to this instance's remote XCTest
+ * runner: starts the xcrun shim and an HTTP forward proxy, and returns the
+ * environment and `maestro test` arguments that route the driver traffic to
+ * the remote runner. Both are torn down when the client disconnects.
+ *
+ * Maestro's driver talks plain HTTP to 127.0.0.1:<driverPort>. Nothing listens
+ * there: the JVM proxy settings route those requests (absolute-form) to the
+ * forward proxy, which rewrites them to the remote runner and passes other
+ * targets through.
+ */
+async function prepareMaestroRun(client, options) {
+    const [maestroVersion, shimDir] = await Promise.all([detectMaestroVersion(), client.startXcrunShim()]);
+    // Maestro 2.5.x hardcodes driver port 7001 and has no --driver-host-port
+    // flag; 2.6+ picks a random port unless the flag is passed.
+    const withDriverHostPortFlag = supportsDriverHostPort(maestroVersion);
+    const driverPort = withDriverHostPortFlag ? await findFreePort() : 7001;
+    const proxyPort = await client.startForwardHttpProxy({
+        remoteBaseUrl: options.runnerUrl,
+        matchPort: driverPort,
+    });
+    const maestroOpts = [
+        process.env['MAESTRO_OPTS'],
+        `-Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=${proxyPort} -Dhttp.nonProxyHosts=`,
+    ]
+        .filter(Boolean)
+        .join(' ');
+    return {
+        maestroVersion,
+        driverPort,
+        env: {
+            MAESTRO_OPTS: maestroOpts,
+            PATH: `${shimDir}${path.delimiter}${process.env['PATH'] ?? ''}`,
+            USE_XCODE_TEST_RUNNER: '1',
+        },
+        args: [
+            '--platform',
+            'ios',
+            '--device',
+            client.deviceInfo.udid,
+            '--no-reinstall-driver',
+            ...(withDriverHostPortFlag ? ['--driver-host-port', String(driverPort)] : []),
+        ],
+    };
+}
+/** Poll the remote Maestro XCTest runner until it responds, e.g. right after launching it. */
+async function waitForMaestroRunner(runnerUrl, token, timeoutMs = 15000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (await isMaestroRunnerRunning(runnerUrl, token)) {
+            return true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    return false;
+}
+/** Probe the remote Maestro XCTest runner's /status endpoint. */
+async function isMaestroRunnerRunning(runnerUrl, token) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    try {
+        const response = await fetch(`${runnerUrl}/status`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+        });
+        return response.ok;
+    }
+    catch {
+        return false;
+    }
+    finally {
+        // Also on failure: a pending timer keeps the event loop alive.
+        clearTimeout(timeout);
+    }
+}
+function detectMaestroVersion() {
+    return new Promise((resolve, reject) => {
+        execFile('maestro', ['--version'], { encoding: 'utf8', ...maestroSpawnOptions }, (error, stdout) => {
+            if (error) {
+                reject(new Error('Failed to run `maestro --version`. Install the Maestro CLI first: https://docs.maestro.dev/getting-started/installing-maestro'));
+                return;
+            }
+            // stdout only: update notices can also start with a version string and
+            // land on stderr or after the real version.
+            const version = stdout
+                .split('\n')
+                .map((line) => line.trim())
+                .find((line) => /^\d+\.\d+\.\d+/.test(line));
+            if (!version) {
+                reject(new Error('Could not parse the Maestro CLI version from `maestro --version` output.'));
+                return;
+            }
+            resolve(version);
+        });
+    });
+}
+function supportsDriverHostPort(version) {
+    const [major = 0, minor = 0] = version.split('.').map((part) => Number.parseInt(part, 10) || 0);
+    return major > 2 || (major === 2 && minor >= 6);
+}
+// Finds a free port and releases it immediately: Maestro validates that the
+// driver port is bindable, so it must stay unbound on our side.
+function findFreePort() {
+    return new Promise((resolve, reject) => {
+        const server = net.createServer();
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => {
+            const address = server.address();
+            if (!address || typeof address === 'string') {
+                server.close();
+                reject(new Error('Failed to find a free port.'));
+                return;
+            }
+            server.close(() => resolve(address.port));
+        });
+    });
+}
+//# sourceMappingURL=ios-maestro.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/rbe-workspace.mjs
-// Mirrored between src/rbe-workspace.ts (canonical) and packages/cli/src/lib/rbe-workspace.ts
-// until the CLI imports it from a published @limrun/api; tests/rbe-copy-sync.test.ts keeps the
-// two copies byte-identical. Apply any edit to both.
 
 
 /**
@@ -91057,10 +93342,10 @@ function inferBuildTarget(workspaceRoot) {
             if (entry.isDirectory()) {
                 if (TARGET_SCAN_SKIP_DIRS.has(entry.name) || entry.name.startsWith('bazel-'))
                     continue;
-                walk(external_path_.join(dir, entry.name));
+                walk(external_path_namespaceObject.join(dir, entry.name));
             }
             else if (entry.name === 'BUILD' || entry.name === 'BUILD.bazel') {
-                collectAppTargets(external_path_.join(dir, entry.name), workspaceRoot, found);
+                collectAppTargets(external_path_namespaceObject.join(dir, entry.name), workspaceRoot, found);
             }
         }
     };
@@ -91076,7 +93361,7 @@ function collectAppTargets(buildFile, workspaceRoot, out) {
     catch {
         return;
     }
-    const pkg = external_path_.relative(workspaceRoot, external_path_.dirname(buildFile)).split(external_path_.sep).join('/');
+    const pkg = external_path_namespaceObject.relative(workspaceRoot, external_path_namespaceObject.dirname(buildFile)).split(external_path_namespaceObject.sep).join('/');
     let inAppRule = false;
     for (const line of content.split('\n')) {
         // Skip comment lines so a commented-out `# ios_application(` can't start a
@@ -91116,7 +93401,7 @@ function collectAppTargets(buildFile, workspaceRoot, out) {
  */
 function detectBazelMajorVersion(workspaceDir) {
     try {
-        const raw = external_fs_.readFileSync(external_path_.join(workspaceDir, '.bazelversion'), 'utf8');
+        const raw = external_fs_.readFileSync(external_path_namespaceObject.join(workspaceDir, '.bazelversion'), 'utf8');
         const firstLine = (raw.split('\n', 1)[0] ?? '').trim();
         const match = firstLine.match(/^(\d+)/);
         return match ? Number(match[1]) : null;
@@ -91335,7 +93620,7 @@ try-import %workspace%/user.limrun.bazelrc
  * fragment. Creates .bazelrc when missing. Returns true when the file changed.
  */
 function ensureTryImport(workspaceDir) {
-    const bazelrcPath = external_path_.join(workspaceDir, '.bazelrc');
+    const bazelrcPath = external_path_namespaceObject.join(workspaceDir, '.bazelrc');
     let current = '';
     if (external_fs_.existsSync(bazelrcPath)) {
         current = external_fs_.readFileSync(bazelrcPath, 'utf8');
@@ -91358,23 +93643,25 @@ function ensureTryImport(workspaceDir) {
  * so nothing else in the user's repo needs to change.
  */
 function writeRbeWorkspaceFiles(workspaceDir, xcodeVersionKey, port, isMacClient = process.platform === 'darwin', bazelMajor = detectBazelMajorVersion(workspaceDir)) {
-    const dir = external_path_.join(workspaceDir, LIMRUN_DIR);
+    const dir = external_path_namespaceObject.join(workspaceDir, LIMRUN_DIR);
     external_fs_.mkdirSync(dir, { recursive: true });
-    const buildFile = external_path_.join(dir, 'BUILD');
-    const bazelrcFragment = external_path_.join(dir, 'bazelrc');
+    const buildFile = external_path_namespaceObject.join(dir, 'BUILD');
+    const bazelrcFragment = external_path_namespaceObject.join(dir, 'bazelrc');
     // Load the Xcode rules from apple_support on Bazel 9+, where they are no
     // longer native globals. On a known Bazel 8 workspace they ARE native (and
     // loading would fail), so omit the loads.
     const emitLoads = isBazel9OrLater(bazelMajor);
     external_fs_.writeFileSync(buildFile, renderXcodeConfigBuild(xcodeVersionKey, emitLoads));
     external_fs_.writeFileSync(bazelrcFragment, renderLimrunBazelrc(port, xcodeVersionKey, isMacClient));
-    external_fs_.writeFileSync(external_path_.join(dir, '.gitignore'), '*\n');
+    external_fs_.writeFileSync(external_path_namespaceObject.join(dir, '.gitignore'), '*\n');
     const bazelrcUpdated = ensureTryImport(workspaceDir);
     return { buildFile, bazelrcFragment, bazelrcUpdated };
 }
 //# sourceMappingURL=rbe-workspace.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/index.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+
 
 
 
@@ -91557,7 +93844,7 @@ async function cleanupXcodeInstances(client, labelSelector) {
  *  (matching the documented contract); an ancestor marker (e.g. a monorepo's
  *  root MODULE.bazel above an xcodebuild app) must not flip the mode. */
 function isBazelWorkspaceRoot(dir) {
-    return ["MODULE.bazel", "WORKSPACE", "WORKSPACE.bazel"].some((marker) => (0,external_fs_.existsSync)((0,external_path_.join)(dir, marker)));
+    return ["MODULE.bazel", "WORKSPACE", "WORKSPACE.bazel"].some((marker) => (0,external_fs_.existsSync)((0,external_path_namespaceObject.join)(dir, marker)));
 }
 /** PATH lookup only: actually invoking bazelisk would download a Bazel release. */
 function bazeliskAvailable() {
@@ -91565,7 +93852,7 @@ function bazeliskAvailable() {
     return (process.env.PATH ?? "")
         .split(process.platform === "win32" ? ";" : ":")
         .filter(Boolean)
-        .some((dir) => exts.some((ext) => (0,external_fs_.existsSync)((0,external_path_.join)(dir, `bazelisk${ext}`))));
+        .some((dir) => exts.some((ext) => (0,external_fs_.existsSync)((0,external_path_namespaceObject.join)(dir, `bazelisk${ext}`))));
 }
 function runBazelisk(args, cwd) {
     return new Promise((resolvePromise, reject) => {
@@ -91696,7 +93983,7 @@ async function runMain() {
     // A Bazel workspace at project-path switches the build to remote build
     // execution: bazel runs here on the runner with Apple actions executing on
     // the instance, so nothing is synced and xcodebuild inputs don't apply.
-    const workspaceRoot = (0,external_path_.resolve)(projectPath);
+    const workspaceRoot = (0,external_path_namespaceObject.resolve)(projectPath);
     const bazelMode = isBazelWorkspaceRoot(workspaceRoot);
     const bazelTarget = getOptionalInput("bazel-target");
     let resolvedBazelTarget;
