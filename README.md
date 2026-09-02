@@ -42,6 +42,41 @@ with:
   api-key: ${{ secrets.LIM_API_KEY }}
 ```
 
+## Images and videos in the pull request
+
+The action can upload images and videos produced by earlier workflow steps into
+the pull request body:
+
+```yaml
+- name: Preview
+  uses: limrun-inc/ios-preview-action@main
+  with:
+    project-path: .
+    api-key: ${{ secrets.LIM_API_KEY }}
+    media: |
+      ./artifacts/home.png#The app home screen
+      ./artifacts/walkthrough.mp4
+```
+
+The runner must have GitHub CLI v2.99.0 or newer. The `media` input accepts one
+local path per line and supports PNG, JPEG, GIF, WebP, SVG, MP4, MOV, and WebM.
+Images use the text after `#` as alt text.
+
+By default, media is appended to the existing body. To place it in a specific
+section, reference the same local path in the body before the action runs:
+
+```markdown
+## Preview
+
+![The app home screen](./artifacts/home.png)
+
+![Walkthrough](./artifacts/walkthrough.mp4)
+```
+
+GitHub CLI rewrites those paths to uploaded assets. Keep a video embed alone in
+its paragraph so GitHub renders it as an inline player. The action never
+overwrites other pull request body content.
+
 ## Bazel projects
 
 When `project-path` is a Bazel workspace root (has `MODULE.bazel`, `WORKSPACE`, or `WORKSPACE.bazel` directly in it), the action builds with Limrun remote build execution instead of xcodebuild: bazel runs on the runner while all Apple actions execute on the remote Xcode instance, and the resulting app is uploaded as the preview asset. The runner needs `bazelisk` on the PATH (preinstalled on GitHub-hosted runners).
@@ -87,7 +122,8 @@ concurrency:
 | `model` | No | `iphone` | The iOS simulator model to use for previews. Supported values: `iphone` or `ipad`. |
 | `build-settings` | No | | Newline-delimited `KEY=VALUE` Xcode build settings for the preview build. Allowlisted safe settings (currently `SWIFT_ACTIVE_COMPILATION_CONDITIONS`) plus any `APP_CONFIG_*` key. |
 | `api-key` | Yes | | Limrun API key. Pass as a secret: `${{ secrets.LIM_API_KEY }}` |
-| `github-token` | No | `${{ github.token }}` | GitHub token for posting PR comments |
+| `github-token` | No | `${{ github.token }}` | GitHub token for posting PR comments and attaching media. |
+| `media` | No | | Newline-delimited image or video paths to attach to the pull request body. Images may include `#alt text`. |
 
 ## Build-time build settings
 
@@ -130,4 +166,7 @@ Pass sensitive `APP_CONFIG_*` values via `${{ secrets.* }}` (e.g. `APP_CONFIG_DE
 
 ## Permissions
 
-The workflow needs `pull-requests: write` to post PR comments. Without this, the action uploads the asset but skips the comment with a warning.
+The workflow needs `pull-requests: write` to post PR comments. Media uploads also
+require repository write access. Without comment permission, the action uploads
+the preview asset but skips the comment with a warning; an explicitly configured
+media upload fails if GitHub rejects it.
