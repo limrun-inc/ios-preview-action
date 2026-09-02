@@ -93758,6 +93758,12 @@ const supportedPreviewModels = ["iphone", "ipad"];
 function getOptionalInput(name) {
     return getInput(name) || undefined;
 }
+function getMediaAttachments() {
+    return getInput("media")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+}
 function getXcodeProjectConfig() {
     return {
         project: getOptionalInput("project"),
@@ -93880,6 +93886,41 @@ function runBazelisk(args, cwd) {
         });
     });
 }
+function attachMediaToPullRequest(token, owner, repo, prNumber, attachments) {
+    const args = [
+        "pr",
+        "edit",
+        String(prNumber),
+        "--repo",
+        `${owner}/${repo}`,
+        ...attachments.flatMap((attachment) => ["--attach", attachment]),
+    ];
+    return new Promise((resolvePromise, reject) => {
+        info(`Attaching ${attachments.length} media file(s) to the pull request body...`);
+        const child = (0,external_child_process_namespaceObject.spawn)("gh", args, {
+            env: { ...process.env, GH_TOKEN: token },
+            stdio: ["ignore", "pipe", "pipe"],
+        });
+        child.stdout.on("data", (chunk) => logChunk(chunk.toString(), info));
+        child.stderr.on("data", (chunk) => logChunk(chunk.toString(), warning));
+        child.on("error", (err) => {
+            reject(err.code === "ENOENT"
+                ? new Error("gh v2.99.0 or newer is required when the media input is set.")
+                : err);
+        });
+        child.on("close", (code, signal) => {
+            if (code === 0) {
+                resolvePromise();
+            }
+            else if (signal) {
+                reject(new Error(`gh pr edit was killed by ${signal}`));
+            }
+            else {
+                reject(new Error(`gh pr edit failed with exit code ${code}. The media input requires gh v2.99.0 or newer.`));
+            }
+        });
+    });
+}
 async function buildWithBazel(xcode, workspaceRoot, target, assetName) {
     info("Starting remote build execution...");
     const initial = await retryTransient(() => xcode.startRbe(), { log: info });
@@ -93922,8 +93963,12 @@ async function runMain() {
     saveState(IS_POST_RUN_STATE, "true");
     const consoleUrl = process.env.LIMRUN_CONSOLE_URL || "https://console.limrun.com";
     const ghToken = getInput("github-token");
+    if (ghToken) {
+        core_setSecret(ghToken);
+    }
     const client = new Limrun({ apiKey });
     const projectPath = getInput("project-path") || ".";
+    const mediaAttachments = getMediaAttachments();
     const { payload } = github_context;
     const pr = payload.pull_request;
     if (!pr) {
@@ -94065,6 +94110,13 @@ async function runMain() {
     }
     else {
         warning("github-token not available, skipping PR comment.");
+    }
+    if (mediaAttachments.length > 0) {
+        if (!ghToken) {
+            throw new Error("github-token is required when the media input is set.");
+        }
+        await attachMediaToPullRequest(ghToken, owner, repo, prNumber, mediaAttachments);
+        info("PR media attached.");
     }
 }
 function logChunk(chunk, log, prefix = "") {

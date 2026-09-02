@@ -25,6 +25,14 @@ function getOptionalInput(name: string): string | undefined {
   return core.getInput(name) || undefined;
 }
 
+function getMediaAttachments(): string[] {
+  return core
+    .getInput("media")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 function getXcodeProjectConfig(): XcodeProjectConfig {
   return {
     project: getOptionalInput("project"),
@@ -162,6 +170,53 @@ function runBazelisk(args: string[], cwd: string): Promise<void> {
   });
 }
 
+function attachMediaToPullRequest(
+  token: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  attachments: string[]
+): Promise<void> {
+  const args = [
+    "pr",
+    "edit",
+    String(prNumber),
+    "--repo",
+    `${owner}/${repo}`,
+    ...attachments.flatMap((attachment) => ["--attach", attachment]),
+  ];
+
+  return new Promise((resolvePromise, reject) => {
+    core.info(`Attaching ${attachments.length} media file(s) to the pull request body...`);
+    const child = spawn("gh", args, {
+      env: { ...process.env, GH_TOKEN: token },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.stdout.on("data", (chunk) => logChunk(chunk.toString(), core.info));
+    child.stderr.on("data", (chunk) => logChunk(chunk.toString(), core.warning));
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      reject(
+        err.code === "ENOENT"
+          ? new Error("gh v2.99.0 or newer is required when the media input is set.")
+          : err
+      );
+    });
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        resolvePromise();
+      } else if (signal) {
+        reject(new Error(`gh pr edit was killed by ${signal}`));
+      } else {
+        reject(
+          new Error(
+            `gh pr edit failed with exit code ${code}. The media input requires gh v2.99.0 or newer.`
+          )
+        );
+      }
+    });
+  });
+}
+
 async function buildWithBazel(
   xcode: XcodeClient,
   workspaceRoot: string,
@@ -213,8 +268,12 @@ async function runMain(): Promise<void> {
   core.saveState(IS_POST_RUN_STATE, "true");
   const consoleUrl = process.env.LIMRUN_CONSOLE_URL || "https://console.limrun.com";
   const ghToken = core.getInput("github-token");
+  if (ghToken) {
+    core.setSecret(ghToken);
+  }
   const client = new Limrun({ apiKey });
   const projectPath = core.getInput("project-path") || ".";
+  const mediaAttachments = getMediaAttachments();
 
   const { payload } = github.context;
   const pr = payload.pull_request;
@@ -373,6 +432,14 @@ async function runMain(): Promise<void> {
     }
   } else {
     core.warning("github-token not available, skipping PR comment.");
+  }
+
+  if (mediaAttachments.length > 0) {
+    if (!ghToken) {
+      throw new Error("github-token is required when the media input is set.");
+    }
+    await attachMediaToPullRequest(ghToken, owner, repo, prNumber, mediaAttachments);
+    core.info("PR media attached.");
   }
 }
 
