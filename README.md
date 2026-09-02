@@ -85,6 +85,7 @@ concurrency:
 | `scheme` | No | | The scheme to build. |
 | `sdk` | No | `iphonesimulator` | The SDK to build. |
 | `model` | No | `iphone` | The iOS simulator model to use for previews. Supported values: `iphone` or `ipad`. |
+| `xcode-version` | No | sandbox default | Xcode major to build with, e.g. `27`. Switches the sandbox when it is bound to another major (its DerivedData resets). |
 | `build-settings` | No | | Newline-delimited `KEY=VALUE` Xcode build settings for the preview build. Allowlisted safe settings (currently `SWIFT_ACTIVE_COMPILATION_CONDITIONS`) plus any `APP_CONFIG_*` key. |
 | `api-key` | Yes | | Limrun API key. Pass as a secret: `${{ secrets.LIM_API_KEY }}` |
 | `github-token` | No | `${{ github.token }}` | GitHub token for posting PR comments |
