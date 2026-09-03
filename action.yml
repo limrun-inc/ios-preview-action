@@ -30,7 +30,7 @@ inputs:
     required: false
     default: 'iphone'
   xcode-version:
-    description: 'Xcode major to build with, e.g. "27". Switches the sandbox when it is bound to another major (its DerivedData resets). Defaults to the sandbox default.'
+    description: 'Xcode major to build with, e.g. "27", the CI equivalent of `lim xcode version set`. Switches the sandbox when it is bound to another major (its DerivedData resets). Defaults to the sandbox default.'
     required: false
     default: ''
   build-settings:
