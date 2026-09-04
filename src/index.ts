@@ -348,7 +348,7 @@ async function runMain(): Promise<void> {
       // One round trip: the daemon answers alreadyBound for a no-op, before any busy check.
       const result = await xcode.setXcode(xcodeVersion);
       if (!result.alreadyBound) {
-        core.info(`Sandbox now uses Xcode ${result.bound.version} (${result.bound.build}); the next build starts cold.`);
+        core.info(`Sandbox now uses Xcode ${result.bound.version} (${result.bound.build}); the previous version's build cache is invalidated, so the next build starts cold.`);
       }
     }
 
