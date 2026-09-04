@@ -34,6 +34,16 @@ function getXcodeProjectConfig(): XcodeProjectConfig {
   };
 }
 
+/** The Xcode major to build with, or undefined for the sandbox default. */
+function getXcodeVersion(): string | undefined {
+  const value = core.getInput("xcode-version").trim();
+  if (!value) return undefined;
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`xcode-version must be an Xcode major such as 27, got "${value}"`);
+  }
+  return value;
+}
+
 function getPreviewModel(): PreviewModel {
   const model = (core.getInput("model") || "iphone").trim().toLowerCase();
   if (supportedPreviewModels.includes(model as PreviewModel)) {
@@ -266,6 +276,7 @@ async function runMain(): Promise<void> {
   }
 
   const previewModel = getPreviewModel();
+  const xcodeVersion = getXcodeVersion();
   const buildSettings = getBuildSettings();
 
   if (!existsSync(projectPath)) {
@@ -333,6 +344,13 @@ async function runMain(): Promise<void> {
     core.info(`Xcode instance ready: ${xcodeInstance.metadata.id}`);
 
     const xcode = await client.xcodeInstances.createClient({ instance: xcodeInstance });
+    if (xcodeVersion) {
+      // One round trip: the daemon answers alreadyBound for a no-op, before any busy check.
+      const result = await xcode.setXcode(xcodeVersion);
+      if (!result.alreadyBound) {
+        core.info(`Sandbox now uses Xcode ${result.bound.version} (${result.bound.build}); DerivedData was reset.`);
+      }
+    }
 
     if (resolvedBazelTarget) {
       await buildWithBazel(xcode, workspaceRoot, resolvedBazelTarget, assetName);
