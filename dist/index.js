@@ -83967,10 +83967,10 @@ const safeJSON = (text) => {
 //# sourceMappingURL=values.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/utils/sleep.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep_sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 //# sourceMappingURL=sleep.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/version.mjs
-const api_version_VERSION = '0.46.11'; // x-release-please-version
+const api_version_VERSION = '0.49.2'; // x-release-please-version
 //# sourceMappingURL=version.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/detect-platform.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
@@ -84130,6 +84130,10 @@ const getPlatformHeaders = () => {
     return (_platformHeaders ?? (_platformHeaders = getPlatformProperties()));
 };
 //# sourceMappingURL=detect-platform.mjs.map
+// EXTERNAL MODULE: external "net"
+var external_net_ = __nccwpck_require__(9278);
+// EXTERNAL MODULE: external "tls"
+var external_tls_ = __nccwpck_require__(4756);
 // EXTERNAL MODULE: ./node_modules/https-proxy-agent/dist/index.js
 var dist = __nccwpck_require__(3669);
 ;// CONCATENATED MODULE: ./node_modules/proxy-from-env/index.js
@@ -84243,11 +84247,14 @@ var node_modules_undici = __nccwpck_require__(4228);
 
 
 
+
+
 // For requests whose server responds only after finishing long work (no bytes
 // until then). Matches the ingress proxy-read-timeout so the client is never
 // the first to give up. undici's defaults are 300s, which would abort e.g. an
 // instance-side artifact upload that takes longer.
 const longRequestTimeouts = { headersTimeout: 3600000, bodyTimeout: 3600000 };
+const maxConnectResponseHeaderBytes = 64 * 1024;
 class NodeProxyTransport {
     constructor() {
         this.websocketAgents = new Map();
@@ -84291,6 +84298,20 @@ class NodeProxyTransport {
         }
         return agent;
     }
+    /**
+     * Opens a paused TCP stream to a destination, tunneling through the proxy
+     * selected by proxy-from-env when applicable. The caller owns the returned
+     * socket and must resume it after installing data/end/error handlers.
+     */
+    connectTcp(options) {
+        const lookupHost = options.proxyLookupHost ?? options.host;
+        const lookupUrl = `${options.proxyLookupProtocol}//${formatAuthority(lookupHost, options.port)}`;
+        const proxyUrl = getProxyForUrl(lookupUrl);
+        if (!proxyUrl) {
+            return connectDirect(options);
+        }
+        return connectThroughProxy(proxyUrl, options);
+    }
     getEnvHttpProxyAgent() {
         this.envHttpProxyAgent ?? (this.envHttpProxyAgent = new node_modules_undici/* EnvHttpProxyAgent */.J2());
         return this.envHttpProxyAgent;
@@ -84314,6 +84335,194 @@ class NodeProxyTransport {
     }
 }
 const proxy_transport_nodeProxyTransport = new NodeProxyTransport();
+function connectDirect(options) {
+    const startedAt = Date.now();
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const socket = external_net_.createConnection({
+            host: options.host,
+            port: options.port,
+            allowHalfOpen: true,
+        });
+        const timer = setTimeout(() => {
+            fail(codedError(`connection to ${formatAuthority(options.host, options.port)} timed out`, 'ETIMEDOUT'));
+        }, options.timeoutMs);
+        timer.unref();
+        const cleanup = () => {
+            clearTimeout(timer);
+            socket.removeListener('connect', onConnect);
+            socket.removeListener('error', fail);
+            options.signal?.removeEventListener('abort', onAbort);
+        };
+        const fail = (error) => {
+            if (settled)
+                return;
+            settled = true;
+            cleanup();
+            socket.destroy();
+            reject(error);
+        };
+        const onAbort = () => fail(codedError('TCP connection cancelled', 'ECANCELED'));
+        const onConnect = () => {
+            if (settled)
+                return;
+            settled = true;
+            socket.pause();
+            cleanup();
+            resolve({
+                socket,
+                connectMs: Date.now() - startedAt,
+                ...(socket.remoteAddress === undefined ? {} : { remoteAddress: socket.remoteAddress }),
+            });
+        };
+        socket.once('connect', onConnect);
+        socket.once('error', fail);
+        if (options.signal?.aborted) {
+            onAbort();
+        }
+        else {
+            options.signal?.addEventListener('abort', onAbort, { once: true });
+        }
+    });
+}
+function connectThroughProxy(proxyUrlString, options) {
+    const startedAt = Date.now();
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        let response = Buffer.alloc(0);
+        let proxyUrl;
+        try {
+            proxyUrl = new URL(proxyUrlString);
+        }
+        catch {
+            reject(codedError(`invalid proxy URL: ${proxyUrlString}`, 'EPROXY'));
+            return;
+        }
+        if (proxyUrl.protocol !== 'http:' && proxyUrl.protocol !== 'https:') {
+            reject(codedError(`unsupported proxy protocol ${proxyUrl.protocol}`, 'EPROXY'));
+            return;
+        }
+        const proxyPort = proxyUrl.port ? Number(proxyUrl.port)
+            : proxyUrl.protocol === 'https:' ? 443
+                : 80;
+        const proxyHost = unbracketHost(proxyUrl.hostname);
+        const socket = proxyUrl.protocol === 'https:' ?
+            external_tls_.connect({
+                host: proxyHost,
+                port: proxyPort,
+                rejectUnauthorized: true,
+                ...(external_net_.isIP(proxyHost) ? {} : { servername: proxyHost }),
+                ALPNProtocols: ['http/1.1'],
+            })
+            : external_net_.createConnection({
+                host: proxyHost,
+                port: proxyPort,
+                allowHalfOpen: true,
+            });
+        socket.allowHalfOpen = true;
+        const connectedEvent = proxyUrl.protocol === 'https:' ? 'secureConnect' : 'connect';
+        const timer = setTimeout(() => {
+            fail(codedError(`proxy connection to ${formatAuthority(options.host, options.port)} timed out`, 'ETIMEDOUT'));
+        }, options.timeoutMs);
+        timer.unref();
+        const cleanup = () => {
+            clearTimeout(timer);
+            socket.removeListener(connectedEvent, onProxyConnected);
+            socket.removeListener('data', onData);
+            socket.removeListener('end', onUnexpectedClose);
+            socket.removeListener('close', onUnexpectedClose);
+            socket.removeListener('error', fail);
+            options.signal?.removeEventListener('abort', onAbort);
+        };
+        const fail = (error) => {
+            if (settled)
+                return;
+            settled = true;
+            cleanup();
+            socket.destroy();
+            reject(error);
+        };
+        const onAbort = () => fail(codedError('proxy connection cancelled', 'ECANCELED'));
+        const onUnexpectedClose = () => fail(codedError('proxy closed before completing CONNECT', 'ECONNRESET'));
+        const onProxyConnected = () => {
+            const authority = formatAuthority(options.host, options.port);
+            const headers = [`CONNECT ${authority} HTTP/1.1`, `Host: ${authority}`, 'Proxy-Connection: Keep-Alive'];
+            if (proxyUrl.username || proxyUrl.password) {
+                const username = decodeUrlCredential(proxyUrl.username);
+                const password = decodeUrlCredential(proxyUrl.password);
+                headers.push(`Proxy-Authorization: Basic ${Buffer.from(`${username}:${password}`, 'utf8').toString('base64')}`);
+            }
+            socket.write(`${headers.join('\r\n')}\r\n\r\n`);
+        };
+        const onData = (chunk) => {
+            response = Buffer.concat([response, chunk]);
+            const headerEnd = response.indexOf('\r\n\r\n');
+            if (headerEnd < 0) {
+                if (response.length > maxConnectResponseHeaderBytes) {
+                    fail(codedError('proxy CONNECT response headers exceeded 65536 bytes', 'EPROXY'));
+                }
+                return;
+            }
+            if (headerEnd + 4 > maxConnectResponseHeaderBytes) {
+                fail(codedError('proxy CONNECT response headers exceeded 65536 bytes', 'EPROXY'));
+                return;
+            }
+            const statusLineEnd = response.indexOf('\r\n');
+            const statusLine = response
+                .subarray(0, statusLineEnd < 0 ? headerEnd : statusLineEnd)
+                .toString('latin1');
+            const statusMatch = /^HTTP\/1\.[01] ([0-9]{3})(?: |$)/.exec(statusLine);
+            if (!statusMatch) {
+                fail(codedError(`invalid proxy CONNECT response: ${statusLine}`, 'EPROXY'));
+                return;
+            }
+            const statusCode = Number(statusMatch[1]);
+            if (statusCode < 200 || statusCode >= 300) {
+                fail(codedError(`proxy CONNECT failed with status ${statusCode}`, statusCode === 407 ? 'EPROXYAUTH' : 'EPROXYCONNECT'));
+                return;
+            }
+            settled = true;
+            socket.pause();
+            cleanup();
+            const remainder = response.subarray(headerEnd + 4);
+            if (remainder.length > 0)
+                socket.unshift(remainder);
+            resolve({
+                socket,
+                connectMs: Date.now() - startedAt,
+                remoteAddress: options.host,
+            });
+        };
+        socket.once(connectedEvent, onProxyConnected);
+        socket.on('data', onData);
+        socket.once('end', onUnexpectedClose);
+        socket.once('close', onUnexpectedClose);
+        socket.once('error', fail);
+        if (options.signal?.aborted) {
+            onAbort();
+        }
+        else {
+            options.signal?.addEventListener('abort', onAbort, { once: true });
+        }
+    });
+}
+function formatAuthority(host, port) {
+    return `${external_net_.isIP(host) === 6 ? `[${host}]` : host}:${port}`;
+}
+function unbracketHost(host) {
+    return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+}
+function decodeUrlCredential(value) {
+    try {
+        return decodeURIComponent(value);
+    }
+    catch {
+        return value;
+    }
+}
+function codedError(message, code) {
+    return Object.assign(new Error(message), { code });
+}
 //# sourceMappingURL=proxy-transport.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/shims.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
@@ -85136,43 +85345,6 @@ const createPathTagFunction = (pathEncoder = encodeURIPath) => function path(sta
  */
 const path_path = /* @__PURE__ */ createPathTagFunction(encodeURIPath);
 //# sourceMappingURL=path.mjs.map
-;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/android-instances.mjs
-// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
-
-
-
-
-class AndroidInstances extends APIResource {
-    /**
-     * Create an Android instance
-     */
-    create(params, options) {
-        const { reuseIfExists, wait, ...body } = params;
-        return this._client.post('/v1/android_instances', { query: { reuseIfExists, wait }, body, ...options });
-    }
-    /**
-     * List Android instances
-     */
-    list(query = {}, options) {
-        return this._client.getAPIList('/v1/android_instances', (Items), { query, ...options });
-    }
-    /**
-     * Delete Android instance with given name
-     */
-    delete(id, options) {
-        return this._client.delete(path_path `/v1/android_instances/${id}`, {
-            ...options,
-            headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
-        });
-    }
-    /**
-     * Get Android instance with given ID
-     */
-    get(id, options) {
-        return this._client.get(path_path `/v1/android_instances/${id}`, options);
-    }
-}
-//# sourceMappingURL=android-instances.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/gradle-instances.mjs
 // Hand-written following the Stainless resource pattern; a future generation
 // from the OpenAPI spec reconciles with this file.
@@ -85211,43 +85383,6 @@ class GradleInstances extends APIResource {
     }
 }
 //# sourceMappingURL=gradle-instances.mjs.map
-;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/ios-instances.mjs
-// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
-
-
-
-
-class IosInstances extends APIResource {
-    /**
-     * Create an iOS instance
-     */
-    create(params, options) {
-        const { reuseIfExists, wait, ...body } = params;
-        return this._client.post('/v1/ios_instances', { query: { reuseIfExists, wait }, body, ...options });
-    }
-    /**
-     * List iOS instances
-     */
-    list(query = {}, options) {
-        return this._client.getAPIList('/v1/ios_instances', (Items), { query, ...options });
-    }
-    /**
-     * Delete iOS instance with given name
-     */
-    delete(id, options) {
-        return this._client.delete(path_path `/v1/ios_instances/${id}`, {
-            ...options,
-            headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
-        });
-    }
-    /**
-     * Get iOS instance with given ID
-     */
-    get(id, options) {
-        return this._client.get(path_path `/v1/ios_instances/${id}`, options);
-    }
-}
-//# sourceMappingURL=ios-instances.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/scoped-tokens.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
@@ -85385,6 +85520,148 @@ class Assets extends assets_Assets {
     }
 }
 //# sourceMappingURL=assets-helpers.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/ios-instances.mjs
+// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+
+
+
+class ios_instances_IosInstances extends APIResource {
+    /**
+     * Create an iOS instance
+     */
+    create(params, options) {
+        const { reuseIfExists, wait, ...body } = params;
+        return this._client.post('/v1/ios_instances', { query: { reuseIfExists, wait }, body, ...options });
+    }
+    /**
+     * List iOS instances
+     */
+    list(query = {}, options) {
+        return this._client.getAPIList('/v1/ios_instances', (Items), { query, ...options });
+    }
+    /**
+     * Delete iOS instance with given name
+     */
+    delete(id, options) {
+        return this._client.delete(path_path `/v1/ios_instances/${id}`, {
+            ...options,
+            headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
+        });
+    }
+    /**
+     * Get iOS instance with given ID
+     */
+    get(id, options) {
+        return this._client.get(path_path `/v1/ios_instances/${id}`, options);
+    }
+}
+//# sourceMappingURL=ios-instances.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/ios-instances-helpers.mjs
+
+
+class IosInstances extends ios_instances_IosInstances {
+    /**
+     * List the instance's persisted session artifacts, optionally narrowed to
+     * one kind.
+     */
+    listSessionArtifacts(id, kind, options) {
+        return this._client.get(path_path `/v1/ios_instances/${id}/session_artifacts`, {
+            query: kind ? { kind } : undefined,
+            ...options,
+        });
+    }
+    /**
+     * List the instance's persisted session recordings.
+     */
+    listRecordings(id, options) {
+        return this.listSessionArtifacts(id, 'recording', options);
+    }
+    /**
+     * List the instance's persisted app log captures.
+     */
+    listAppLogs(id, options) {
+        return this.listSessionArtifacts(id, 'appLog', options);
+    }
+    /**
+     * List the instance's persisted event log captures.
+     */
+    listEvents(id, options) {
+        return this.listSessionArtifacts(id, 'eventLog', options);
+    }
+}
+//# sourceMappingURL=ios-instances-helpers.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/android-instances.mjs
+// File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
+
+
+
+
+class android_instances_AndroidInstances extends APIResource {
+    /**
+     * Create an Android instance
+     */
+    create(params, options) {
+        const { reuseIfExists, wait, ...body } = params;
+        return this._client.post('/v1/android_instances', { query: { reuseIfExists, wait }, body, ...options });
+    }
+    /**
+     * List Android instances
+     */
+    list(query = {}, options) {
+        return this._client.getAPIList('/v1/android_instances', (Items), { query, ...options });
+    }
+    /**
+     * Delete Android instance with given name
+     */
+    delete(id, options) {
+        return this._client.delete(path_path `/v1/android_instances/${id}`, {
+            ...options,
+            headers: buildHeaders([{ Accept: '*/*' }, options?.headers]),
+        });
+    }
+    /**
+     * Get Android instance with given ID
+     */
+    get(id, options) {
+        return this._client.get(path_path `/v1/android_instances/${id}`, options);
+    }
+}
+//# sourceMappingURL=android-instances.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/android-instances-helpers.mjs
+
+
+class AndroidInstances extends android_instances_AndroidInstances {
+    /**
+     * List the instance's persisted session artifacts, optionally narrowed to
+     * one kind.
+     */
+    listSessionArtifacts(id, kind, options) {
+        return this._client.get(path_path `/v1/android_instances/${id}/session_artifacts`, {
+            query: kind ? { kind } : undefined,
+            ...options,
+        });
+    }
+    /**
+     * List the instance's persisted session recordings.
+     */
+    listRecordings(id, options) {
+        return this.listSessionArtifacts(id, 'recording', options);
+    }
+    /**
+     * List the instance's persisted app log captures.
+     */
+    listAppLogs(id, options) {
+        return this.listSessionArtifacts(id, 'appLog', options);
+    }
+    /**
+     * List the instance's persisted event log captures.
+     */
+    listEvents(id, options) {
+        return this.listSessionArtifacts(id, 'eventLog', options);
+    }
+}
+//# sourceMappingURL=android-instances-helpers.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/resources/xcode-instances.mjs
 // File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
@@ -85430,7 +85707,7 @@ var node = __nccwpck_require__(7874);
 const CLOSED = node/* CLOSED */.V;
 const CONNECTING = node/* CONNECTING */.Zt;
 const OPEN = node/* OPEN */.vP;
-const createEventSource = node/* createEventSource */.iv;
+const node_cjs_createEventSource = node/* createEventSource */.iv;
 
 
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/xcode-cache.mjs
@@ -85553,7 +85830,7 @@ function followXcodeCache(target, options = {}) {
             }
             return res;
         };
-        const source = createEventSource({
+        const source = node_cjs_createEventSource({
             url,
             fetch: fetchOrGone,
             onConnect: () => options.onOpen?.(),
@@ -85608,7 +85885,7 @@ function followXcodeCache(target, options = {}) {
  * reconnect-loops. exec-client has the same latent hazard and should adopt
  * this when touched next.
  */
-function sseFetch(fetchImpl, onRejected) {
+function sse_fetch_sseFetch(fetchImpl, onRejected) {
     return async (input, init) => {
         try {
             return await fetchImpl(input, init);
@@ -85645,7 +85922,7 @@ function sseFetch(fetchImpl, onRejected) {
  *
  * @internal Mutable for tests only.
  */
-const sseStreamPolicy = {
+const exec_client_sseStreamPolicy = {
     healthyConnectionMs: 15000,
     giveUpAfterMs: 300000,
 };
@@ -85721,6 +85998,13 @@ class ExecChildProcess {
         this.detached = false;
         this.appStoreEvent = null;
         this.playstoreEvent = null;
+        this.xctestCases = [];
+        this.xctestSummary = null;
+        // Highest server-assigned event id already dispatched. The server numbers
+        // every frame and replays the stream from the start on reconnect; skipping
+        // ids at or below this mark drops the replayed prefix for every event type
+        // at once, and stays correct if the server ever honors Last-Event-ID.
+        this.lastSeenEventId = -1;
         this.options = options;
         this.log = options.log ?? (() => { });
         this.startedPromise = new Promise((resolve, reject) => {
@@ -85870,7 +86154,17 @@ class ExecChildProcess {
         if (request.command === 'xcodebuild' && request.testflight) {
             timeoutMs += (Math.max(0, request.testflight.waitTimeoutSeconds ?? 0) + 900) * 1000;
         }
-        else if (request.command === 'run') {
+        if (request.command === 'xcodebuild' && request.xcodebuild?.action === 'build-for-testing') {
+            // The test run happens after the build: products sync plus the suite,
+            // which the server caps at an hour per target. Two hours cover the
+            // common unit-plus-UI shape; the client cannot know the target count, so
+            // schemes with more targets may need a liveness-based deadline instead.
+            // Kept even with runTests: false: servers without run suppression still
+            // execute the suite, and the cap is an upper bound so a pure build
+            // finishes early regardless.
+            timeoutMs += 2 * 3600 * 1000;
+        }
+        if (request.command === 'run') {
             timeoutMs = (Math.max(1, request.timeoutSeconds ?? 3600) + 60) * 1000;
         }
         let exitCode;
@@ -85941,6 +86235,14 @@ class ExecChildProcess {
             ...('additionalMetadata' in request ? request.additionalMetadata ?? {} : {}),
             ...(this.appStoreEvent ? { appstore: this.appStoreEvent } : {}),
             ...(this.playstoreEvent ? { playstore: this.playstoreEvent } : {}),
+            ...(this.xctestCases.length > 0 || this.xctestSummary ?
+                {
+                    xctest: {
+                        cases: this.xctestCases,
+                        ...(this.xctestSummary ? { summary: this.xctestSummary } : {}),
+                    },
+                }
+                : {}),
             ...(timedOut ? { timedOut } : {}),
             ...(incomplete ? { incomplete } : {}),
         };
@@ -86007,9 +86309,9 @@ class ExecChildProcess {
                 cleanResponseThisCycle = response.ok;
                 return response;
             };
-            const eventSource = createEventSource({
+            const eventSource = node_cjs_createEventSource({
                 url: eventsUrl,
-                fetch: sseFetch(fetchWithStreamPolicy, (err) => {
+                fetch: sse_fetch_sseFetch(fetchWithStreamPolicy, (err) => {
                     lastStreamError = err instanceof Error ? err : new Error(String(err));
                 }),
                 headers: { Authorization: `Bearer ${this.options.token}` },
@@ -86049,7 +86351,7 @@ class ExecChildProcess {
                     lastCycleAt = now;
                     lastCycleMono = mono;
                     const healthy = proofOfLifeThisCycle ||
-                        (cleanResponseThisCycle && livedMs >= sseStreamPolicy.healthyConnectionMs);
+                        (cleanResponseThisCycle && livedMs >= exec_client_sseStreamPolicy.healthyConnectionMs);
                     proofOfLifeThisCycle = false;
                     cleanResponseThisCycle = false;
                     if (healthy) {
@@ -86062,7 +86364,7 @@ class ExecChildProcess {
                         this.log('warn', 'SSE disconnected; reconnecting');
                         return;
                     }
-                    if (now - this.streamDeadSince >= sseStreamPolicy.giveUpAfterMs) {
+                    if (now - this.streamDeadSince >= exec_client_sseStreamPolicy.giveUpAfterMs) {
                         const seconds = Math.round((now - this.streamDeadSince) / 1000);
                         const cause = lastStreamError ? `; last error: ${lastStreamError.message}` : '';
                         fail(new ExecStreamLostError(`event stream to ${eventsUrl} kept failing for ${seconds}s without delivering events${cause}; ` +
@@ -86073,6 +86375,15 @@ class ExecChildProcess {
                     this.streamDeadSince = 0;
                     proofOfLifeThisCycle = true;
                     lastStreamError = undefined;
+                    const eventId = message.id !== undefined ? parseInt(message.id, 10) : NaN;
+                    if (!Number.isNaN(eventId)) {
+                        if (eventId <= this.lastSeenEventId) {
+                            // A reconnect replays the stream from the start; this frame was
+                            // already dispatched on an earlier connection.
+                            return;
+                        }
+                        this.lastSeenEventId = eventId;
+                    }
                     const data = typeof message.data === 'string' ? message.data : String(message.data ?? '');
                     const eventType = message.event;
                     if (eventType === 'command') {
@@ -86105,6 +86416,38 @@ class ExecChildProcess {
                             // read as a missing feature.
                             this.playstoreEvent = { state: 'unknown' };
                             this.log('warn', `SSE playstore event has invalid data: ${data}`);
+                        }
+                    }
+                    else if (eventType === 'xctest') {
+                        let event;
+                        try {
+                            const parsed = JSON.parse(data);
+                            if (parsed?.type === 'case') {
+                                this.xctestCases.push(parsed);
+                                event = parsed;
+                            }
+                            else if (parsed?.type === 'summary') {
+                                this.xctestSummary = parsed;
+                                event = parsed;
+                            }
+                            else {
+                                // The simulator owns the frame vocabulary and may grow it; the
+                                // callback's contract is cases and summaries only.
+                                this.log('debug', `SSE xctest event of unknown type ignored: ${data}`);
+                            }
+                        }
+                        catch {
+                            this.log('warn', `SSE xctest event has invalid data: ${data}`);
+                        }
+                        if (event) {
+                            try {
+                                this.options.onXctestEvent?.(event);
+                            }
+                            catch (err) {
+                                // The consumer's callback, not the frame: the run must not be
+                                // derailed and the log must not blame the payload.
+                                this.log('warn', `onXctestEvent callback threw: ${String(err)}`);
+                            }
                         }
                     }
                     else if (eventType === 'exitCode') {
@@ -86995,9 +87338,10 @@ const XCODE_DEFAULT_EXCLUDE_PREFIXES = [
  *  2. User include (--include): explicit intent beats every other exclusion.
  *  3. `.git` and `.DS_Store`.
  *  4. Default Xcode/dependency excludes (when xcodeDefaults is set).
- *  5. Built-in force-include: `*.xcconfig` (gitignored xcconfigs are still
- *     required to reproduce the build remotely). Gitignored projects are NOT
- *     force-included: limbuild regenerates them from project.yml, and
+ *  5. Built-in force-include: `*.xcconfig` and `.env` files (gitignored
+ *     xcconfigs and env files are still required to reproduce the build
+ *     remotely; Expo app configs routinely read `.env`). Gitignored projects
+ *     are NOT force-included: limbuild regenerates them from project.yml, and
  *     exact-version holdouts force-sync theirs with `--include`.
  *  6. `.gitignore` chain: the root file, plus nested ones with git semantics
  *     when xcodeDefaults is set (rules bind relative to their containing
@@ -87105,11 +87449,16 @@ async function folder_sync_ignore_createIgnoreFn(rootDir, options) {
             if (normalized.includes('/xcuserdata/') || normalized.includes('.dSYM/'))
                 return true;
         }
-        // 5. Built-in force-include: gitignored xcconfigs are still required to
-        // reproduce the build remotely. Gitignored .xcodeproj bundles are NOT
-        // force-included: limbuild regenerates them from project.yml, and
-        // exact-version holdouts force-sync theirs with --include.
+        // 5. Built-in force-include: gitignored xcconfigs and .env files are
+        // still required to reproduce the build remotely (Expo app configs read
+        // .env / .env.local / .env.production at prebuild time). Gitignored
+        // .xcodeproj bundles are NOT force-included: limbuild regenerates them
+        // from project.yml, and exact-version holdouts force-sync theirs with
+        // --include.
         if (withoutTrailingSlash.endsWith('.xcconfig'))
+            return false;
+        const basename = withoutTrailingSlash.slice(withoutTrailingSlash.lastIndexOf('/') + 1);
+        if (basename.endsWith('.env') || basename.startsWith('.env.'))
             return false;
         // 6. The .gitignore chain. Only a decisive *exclude* short-circuits; a
         // negation re-include (decision.ignored === false) still falls through to
@@ -87160,11 +87509,20 @@ function deriveBasisCache(localCodePath, override) {
     return { cacheKey, basisCacheDir: override ?? external_path_namespaceObject.join(external_os_namespaceObject.tmpdir(), cacheKey) };
 }
 /**
+ * Default TTL for build-product uploads. Every build upload without an
+ * explicit ttl pushes the asset's expiry to 14 days from that upload, so
+ * abandoned build artifacts don't accumulate in Asset Storage forever.
+ * Assets uploaded through the general asset API keep no expiry by default.
+ */
+const DEFAULT_BUILD_ASSET_TTL = '336h';
+/**
  * Mints presigned upload/download URLs for a named asset via assets.getOrCreate,
  * wrapping failures with the asset name (and the original error as cause).
+ * All build-product upload paths (xcodebuild, gradlebuild, RBE) go through
+ * here, which is what scopes DEFAULT_BUILD_ASSET_TTL to build uploads.
  */
 function mintAssetUploadUrls(assets, name, ttl, uploadOptions) {
-    return assets.getOrCreate({ name, ...(ttl && { ttl }), ...uploadOptions }).catch((err) => {
+    return assets.getOrCreate({ name, ttl: ttl || DEFAULT_BUILD_ASSET_TTL, ...uploadOptions }).catch((err) => {
         const message = `Failed to create upload URL for asset '${name}': ${err instanceof Error ? err.message : err}`;
         // @ts-ignore - not all envs have native support for cause yet
         throw new Error(message, { cause: err });
@@ -87187,11 +87545,10 @@ function createDaemonLogger(prefix, logLevel) {
 }
 //# sourceMappingURL=daemon-client-shared.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/build-settings.mjs
-// Structural validation only. The server is authoritative on which build
-// settings are allowed (an allowlist of safe standard settings plus the
-// APP_CONFIG_* namespace), so the client checks only shape and size and lets
-// the server reject disallowed keys. This keeps the allowlist server-side, so
-// adding a setting does not require an SDK release.
+// Structural validation only. The server owns the key rules (it reserves a
+// few managed keys), so the client checks only shape and size and lets the
+// server reject what it does not accept. Changing a server rule then needs no
+// SDK release.
 const buildSettingKeyPattern = /^[A-Z0-9_]+$/;
 const maxBuildSettingCount = 32;
 const maxBuildSettingValueBytes = 4096;
@@ -87243,8 +87600,6 @@ function parseBuildSettingEntries(entries) {
     return settings;
 }
 //# sourceMappingURL=build-settings.mjs.map
-// EXTERNAL MODULE: external "net"
-var external_net_ = __nccwpck_require__(9278);
 // EXTERNAL MODULE: ./node_modules/ws/lib/stream.js
 var stream = __nccwpck_require__(1650);
 // EXTERNAL MODULE: ./node_modules/ws/lib/extension.js
@@ -88439,6 +88794,7 @@ async function fetchSandboxInfo(apiUrl, token) {
     }
     return {
         homeDir: normalizeWorkspaceRelativePath(body.homeDir),
+        ...(body.xcode ? { xcode: body.xcode } : {}),
     };
 }
 /**
@@ -88479,13 +88835,36 @@ class RbeUnsupportedError extends error_LimrunError {
     }
 }
 /**
+ * Raised when an `/xcode` request returns 404: the sandbox's daemon predates Xcode
+ * version selection. Distinct from NotFoundError for the same reason as
+ * RbeUnsupportedError: the instance exists, only the feature is missing.
+ */
+class XcodeSelectionUnsupportedError extends error_LimrunError {
+    constructor(operation) {
+        super(`Xcode version selection is not available on this sandbox (${operation} returned 404): ` +
+            'its daemon predates Xcode selection. Create a new sandbox, or omit the Xcode version to build with its default.');
+        this.name = 'XcodeSelectionUnsupportedError';
+    }
+}
+/** Reads an `/xcode` JSON response, mapping a 404 to XcodeSelectionUnsupportedError. */
+function readXcodeResponse(res, operation) {
+    return readOrUnsupported(res, operation, (op) => new XcodeSelectionUnsupportedError(op));
+}
+/**
  * Reads an `/rbe` JSON response, mapping a 404 to RbeUnsupportedError (a route
  * 404 means RBE is not supported here, never a missing instance).
  */
-async function readRbeResponse(res, operation) {
+function readRbeResponse(res, operation) {
+    return readOrUnsupported(res, operation, (op) => new RbeUnsupportedError(op));
+}
+/**
+ * Reads a JSON response from a limbuild route that only newer daemons serve: a 404 there means
+ * the feature is missing, never that the instance is (the caller's error class says which).
+ */
+async function readOrUnsupported(res, operation, unsupported) {
     if (res.status === 404) {
         await res.text().catch(() => undefined);
-        throw new RbeUnsupportedError(operation);
+        throw unsupported(operation);
     }
     return readJsonResponse(res, operation);
 }
@@ -88666,6 +89045,21 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                 if (options?.reactNative?.devServerURL && settings?.configuration === 'Release') {
                     throw new Error('reactNative.devServerURL is only supported for Debug builds');
                 }
+                if (settings?.onlyTesting?.length && settings?.skipTesting?.length) {
+                    throw new Error('onlyTesting and skipTesting are mutually exclusive; pass one');
+                }
+                if ((settings?.onlyTesting?.length || settings?.skipTesting?.length) &&
+                    settings?.action !== 'build-for-testing') {
+                    throw new Error("onlyTesting/skipTesting require action: 'build-for-testing'");
+                }
+                if (settings?.runTests === false && settings?.action !== 'build-for-testing') {
+                    throw new Error("runTests: false requires action: 'build-for-testing'");
+                }
+                if (settings?.action === 'build-for-testing' &&
+                    settings.sdk !== undefined &&
+                    settings.sdk !== 'iphonesimulator') {
+                    throw new Error("action: 'build-for-testing' requires the iphonesimulator sdk");
+                }
                 if (options?.buildSettings) {
                     validateBuildSettings(options.buildSettings);
                 }
@@ -88680,23 +89074,34 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                     // testflight until the exec API is revised separately.
                     ...(options?.appstore && { testflight: options.appstore }),
                     ...(options?.buildSettings && { buildSettings: options.buildSettings }),
+                    ...(options?.env?.length && { env: options.env }),
                     ...(options?.gitInit !== undefined && { gitInit: options.gitInit }),
+                    ...(options?.logProcessor && { logProcessor: options.logProcessor }),
                     ...(options?.webhook && { webhook: options.webhook }),
                 };
+                // One options object for both exec call sites, so a future per-exec
+                // option cannot be added to one branch and silently dropped from the
+                // other.
+                const execOptions = {
+                    apiUrl,
+                    token,
+                    log,
+                    ...(options?.onXctestEvent && { onXctestEvent: options.onXctestEvent }),
+                };
                 if (options?.upload && 'assetName' in options.upload) {
-                    const requestPromise = mintAssetUploadUrls(client.assets, options.upload.assetName, undefined, options.upload.uploadOptions).then((asset) => {
+                    const requestPromise = mintAssetUploadUrls(client.assets, options.upload.assetName, options.upload.ttl, options.upload.uploadOptions).then((asset) => {
                         request.signedUploadUrl = asset.signedUploadUrl;
                         // Lets limbuild record the built app's metadata on the asset.
                         request.assetId = asset.id;
                         request.additionalMetadata = { signedDownloadUrl: asset.signedDownloadUrl };
                         return request;
                     });
-                    return exec_client_exec(requestPromise, { apiUrl, token, log });
+                    return exec_client_exec(requestPromise, execOptions);
                 }
                 if (options?.upload && 'signedUploadUrl' in options.upload) {
                     request.signedUploadUrl = options.upload.signedUploadUrl;
                 }
-                return exec_client_exec(request, { apiUrl, token, log });
+                return exec_client_exec(request, execOptions);
             },
             run(commandLine, options) {
                 if (commandLine.trim() === '') {
@@ -88729,6 +89134,27 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
             attachSimulator: attachSimulatorImpl,
             attachNewSimulator: attachNewSimulatorImpl,
             deleteSimulator: deleteSimulatorImpl,
+            async getXcode() {
+                const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/xcode`, {
+                    method: 'GET',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+                return readXcodeResponse(res, 'GET /xcode');
+            },
+            async setXcode(major) {
+                const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/xcode`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ version: major }),
+                });
+                return readXcodeResponse(res, 'POST /xcode');
+            },
+            getInfo: () => fetchSandboxInfo(apiUrl, token),
             async startRbe(opts) {
                 const res = await proxy_transport_nodeProxyTransport.fetch(`${apiUrl}/rbe`, {
                     method: 'POST',
@@ -88859,9 +89285,9 @@ class XcodeInstances extends xcode_instances_XcodeInstances {
                         reject(err);
                     };
                     const onAbort = () => settleReject(new Error(`waiting for build ${invocationId} was aborted`));
-                    const eventSource = createEventSource({
+                    const eventSource = node_cjs_createEventSource({
                         url: `${apiUrl}/exec/${invocationId}/events`,
-                        fetch: sseFetch(proxy_transport_nodeProxyTransport.fetch, (err) => settleReject(new Error(`build event stream for ${invocationId} is unreachable: ${err instanceof Error ? err.message : err}`))),
+                        fetch: sse_fetch_sseFetch(proxy_transport_nodeProxyTransport.fetch, (err) => settleReject(new Error(`build event stream for ${invocationId} is unreachable: ${err instanceof Error ? err.message : err}`))),
                         headers: { Authorization: `Bearer ${token}` },
                         onMessage: (message) => {
                             if (message.event !== 'end') {
@@ -88982,7 +89408,7 @@ class GradleInstancesHelpers extends GradleInstances {
                     ...(options?.playstore && { playstore: options.playstore }),
                 };
                 if (options?.upload && 'assetName' in options.upload) {
-                    const requestPromise = mintAssetUploadUrls(client.assets, options.upload.assetName).then((asset) => {
+                    const requestPromise = mintAssetUploadUrls(client.assets, options.upload.assetName, options.upload.ttl).then((asset) => {
                         request.signedUploadUrl = asset.signedUploadUrl;
                         request.additionalMetadata = { signedDownloadUrl: asset.signedDownloadUrl };
                         return request;
@@ -89410,7 +89836,7 @@ class Limrun {
             const maxRetries = options.maxRetries ?? this.maxRetries;
             timeoutMillis = this.calculateDefaultRetryTimeoutMillis(retriesRemaining, maxRetries);
         }
-        await sleep(timeoutMillis);
+        await sleep_sleep(timeoutMillis);
         return this.makeRequest(options, retriesRemaining - 1, requestLogID);
     }
     calculateDefaultRetryTimeoutMillis(retriesRemaining, maxRetries) {
@@ -90118,7 +90544,1954 @@ async function android_basis_cache_bootstrapAndroidBasisCache(apkPath, basisCach
     }
 }
 //# sourceMappingURL=android-basis-cache.mjs.map
+;// CONCATENATED MODULE: external "dns"
+const external_dns_namespaceObject = require("dns");
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/destination-tunnel-wire-reader.mjs
+class destination_tunnel_wire_reader_DestinationTunnelProtocolError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'DestinationTunnelProtocolError';
+    }
+}
+function destination_tunnel_wire_reader_readRecord(value, name) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw new destination_tunnel_wire_reader_DestinationTunnelProtocolError(`${name} must be an object`);
+    }
+    return value;
+}
+function destination_tunnel_wire_reader_readArray(record, key) {
+    const value = record[key];
+    if (!Array.isArray(value)) {
+        throw new destination_tunnel_wire_reader_DestinationTunnelProtocolError(`${key} must be an array`);
+    }
+    return value;
+}
+function destination_tunnel_wire_reader_readString(record, key) {
+    const value = record[key];
+    if (typeof value !== 'string') {
+        throw new destination_tunnel_wire_reader_DestinationTunnelProtocolError(`${key} must be a string`);
+    }
+    return value;
+}
+function destination_tunnel_wire_reader_readNonEmptyString(record, key) {
+    const value = destination_tunnel_wire_reader_readString(record, key);
+    if (value.length === 0) {
+        throw new destination_tunnel_wire_reader_DestinationTunnelProtocolError(`${key} must not be empty`);
+    }
+    return value;
+}
+function destination_tunnel_wire_reader_readBoolean(record, key) {
+    const value = record[key];
+    if (typeof value !== 'boolean') {
+        throw new destination_tunnel_wire_reader_DestinationTunnelProtocolError(`${key} must be a boolean`);
+    }
+    return value;
+}
+function destination_tunnel_wire_reader_readInteger(record, key) {
+    const value = record[key];
+    if (!Number.isInteger(value)) {
+        throw new destination_tunnel_wire_reader_DestinationTunnelProtocolError(`${key} must be an integer`);
+    }
+    return value;
+}
+function destination_tunnel_wire_reader_readFiniteNumber(record, key) {
+    const value = record[key];
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new destination_tunnel_wire_reader_DestinationTunnelProtocolError(`${key} must be a finite number`);
+    }
+    return value;
+}
+function destination_tunnel_wire_reader_readSafeNonNegativeInteger(value, name) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+        throw new destination_tunnel_wire_reader_DestinationTunnelProtocolError(`${name} must be a safe non-negative integer`);
+    }
+    return value;
+}
+function destination_tunnel_wire_reader_readOptionalString(record, key) {
+    return record[key] === undefined ? {} : { [key]: destination_tunnel_wire_reader_readString(record, key) };
+}
+function destination_tunnel_wire_reader_readOptionalBoolean(record, key) {
+    return record[key] === undefined ? {} : { [key]: destination_tunnel_wire_reader_readBoolean(record, key) };
+}
+function destination_tunnel_wire_reader_readOptionalNonNegativeInteger(record, key) {
+    const value = record[key];
+    if (value === undefined)
+        return {};
+    if (!Number.isInteger(value) || value < 0) {
+        throw new destination_tunnel_wire_reader_DestinationTunnelProtocolError(`${key} must be a non-negative integer`);
+    }
+    return { [key]: value };
+}
+function decodeUtf8(value, name) {
+    try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(value);
+    }
+    catch {
+        throw new destination_tunnel_wire_reader_DestinationTunnelProtocolError(`${name} must be valid UTF-8`);
+    }
+}
+function destination_tunnel_wire_reader_toBuffer(data) {
+    if (Buffer.isBuffer(data))
+        return data;
+    if (Array.isArray(data))
+        return Buffer.concat(data);
+    if (data instanceof ArrayBuffer)
+        return Buffer.from(data);
+    throw new destination_tunnel_wire_reader_DestinationTunnelProtocolError('unsupported WebSocket payload type');
+}
+//# sourceMappingURL=destination-tunnel-wire-reader.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/destination-tunnel-inspection.mjs
+
+
+
+
+
+/**
+ * Follow one tunnel's inspection SSE feed independently from its data
+ * WebSocket. Authentication is carried in `?token=` so the same endpoint can
+ * be consumed by browser-native EventSource.
+ */
+function destination_tunnel_inspection_startDestinationTunnelInspectionStream(remoteURL, tunnelId, token, options = {}) {
+    let active = true;
+    let lastSequence = 0;
+    const reportError = (error) => {
+        invokeSafely(options.onError, error);
+    };
+    const emitGap = (fromSequence, toSequence) => {
+        invokeSafely(options.onEvent, {
+            type: 'gap',
+            sequence: toSequence,
+            data: {
+                fromSequence,
+                toSequence,
+                message: `Inspection stream gap: missing sequences ${fromSequence}-${toSequence}`,
+            },
+        }, reportError);
+    };
+    const acceptSequence = (sequence, explicitGap) => {
+        if (!Number.isSafeInteger(sequence) || sequence < 0) {
+            throw new DestinationTunnelProtocolError('inspection sequence must be a safe non-negative integer');
+        }
+        if (sequence <= lastSequence) {
+            throw new DestinationTunnelProtocolError(`inspection sequence ${sequence} is not newer than ${lastSequence}`);
+        }
+        if (explicitGap) {
+            if (explicitGap.fromSequence !== lastSequence + 1 ||
+                explicitGap.toSequence !== sequence ||
+                explicitGap.fromSequence > explicitGap.toSequence) {
+                throw new DestinationTunnelProtocolError('invalid inspection gap range');
+            }
+            emitGap(explicitGap.fromSequence, explicitGap.toSequence);
+        }
+        else if (sequence > lastSequence + 1) {
+            emitGap(lastSequence + 1, sequence - 1);
+        }
+        lastSequence = sequence;
+    };
+    const url = deriveDestinationTunnelInspectionURL(remoteURL, tunnelId, lastSequence, token);
+    const source = createEventSource({
+        url,
+        fetch: nodeProxyTransport.fetch.bind(nodeProxyTransport),
+        onMessage: (message) => {
+            if (!active)
+                return;
+            try {
+                const event = decodeDestinationTunnelInspectionSSEEvent(message.id, message.data);
+                if (event.type === 'gap') {
+                    acceptSequence(event.sequence, event.data);
+                }
+                else {
+                    acceptSequence(event.sequence);
+                    invokeSafely(options.onEvent, event, reportError);
+                }
+            }
+            catch (error) {
+                reportError(error instanceof Error ? error : new Error(String(error)));
+            }
+        },
+        onDisconnect: () => {
+            if (active)
+                reportError(new Error('Inspection SSE disconnected; reconnecting'));
+        },
+    });
+    const close = () => {
+        if (!active)
+            return;
+        active = false;
+        source.close();
+    };
+    return { close };
+}
+/**
+ * Decode one browser/EventSource message while keeping the public inspection
+ * event API independent of SSE transport details.
+ */
+function decodeDestinationTunnelInspectionSSEEvent(lastEventId, text) {
+    if (lastEventId === undefined || !/^(0|[1-9]\d*)$/.test(lastEventId)) {
+        throw new DestinationTunnelProtocolError('inspection SSE event ID must be an unsigned integer');
+    }
+    const sequence = Number(lastEventId);
+    if (!Number.isSafeInteger(sequence)) {
+        throw new DestinationTunnelProtocolError('inspection sequence must be a safe non-negative integer');
+    }
+    let parsed;
+    try {
+        parsed = JSON.parse(text);
+    }
+    catch {
+        throw new DestinationTunnelProtocolError('inspection SSE data must be valid JSON');
+    }
+    const record = readRecord(parsed, 'inspection event');
+    if (record['sequence'] !== undefined) {
+        const envelopeSequence = readSafeNonNegativeInteger(record['sequence'], 'inspection sequence');
+        if (envelopeSequence !== sequence) {
+            throw new DestinationTunnelProtocolError('inspection SSE event ID does not match envelope sequence');
+        }
+    }
+    if (readString(record, 'type') !== 'body') {
+        return decodeDestinationTunnelInspectionMetadataRecord(record, sequence);
+    }
+    const requestId = readRequiredRequestId(record);
+    const data = readRecord(record['data'], 'inspection body data');
+    const direction = readString(data, 'direction');
+    if (direction !== 'request' && direction !== 'response') {
+        throw new DestinationTunnelProtocolError('invalid inspection body direction');
+    }
+    if (readString(data, 'encoding') !== 'base64') {
+        throw new DestinationTunnelProtocolError('inspection body encoding must be base64');
+    }
+    const body = decodeCanonicalBase64(readString(data, 'chunk'));
+    return {
+        type: 'body',
+        sequence,
+        requestId,
+        direction,
+        body,
+    };
+}
+function decodeDestinationTunnelInspectionMetadataRecord(record, sequence) {
+    const type = readString(record, 'type');
+    const data = readRecord(record['data'], 'inspection metadata data');
+    switch (type) {
+        case 'complete':
+            return {
+                type,
+                sequence,
+                requestId: readRequiredRequestId(record),
+                data: readComplete(data),
+            };
+        case 'gap': {
+            const fromSequence = readSafeNonNegativeInteger(data['fromSequence'], 'inspection sequence');
+            const toSequence = readSafeNonNegativeInteger(data['toSequence'], 'inspection sequence');
+            return {
+                type,
+                sequence,
+                data: {
+                    fromSequence,
+                    toSequence,
+                    message: `Inspection stream gap: missing sequences ${fromSequence}-${toSequence}`,
+                },
+            };
+        }
+        case 'inspection_error':
+            return {
+                type,
+                sequence,
+                ...(record['requestId'] === undefined ? {} : { requestId: readRequiredRequestId(record) }),
+                data: { ...data, message: readString(data, 'message') },
+            };
+        default:
+            throw new DestinationTunnelProtocolError(`unknown inspection metadata type ${type}`);
+    }
+}
+function readComplete(record) {
+    readDateTime(record, 'startedDateTime');
+    readFiniteNumber(record, 'time');
+    readRequest(readRecord(record['request'], 'inspection request'));
+    readResponse(readRecord(record['response'], 'inspection response'));
+    readExtension(readRecord(record['_limrun'], 'inspection extension'));
+    return record;
+}
+function readExtension(record) {
+    readString(record, 'tunnelId');
+    readString(record, 'selectorId');
+    readOptionalString(record, 'error');
+    readOptionalBoolean(record, 'requestBodyTruncated');
+    readOptionalBoolean(record, 'responseBodyTruncated');
+    if (record['responseTrailers'] !== undefined) {
+        readNameValueArray(record['responseTrailers'], 'response trailers');
+    }
+    if (record['responseCookieSameSite'] !== undefined) {
+        for (const item of readArray(record, 'responseCookieSameSite')) {
+            const sameSite = readRecord(item, 'response cookie same-site metadata');
+            readSafeNonNegativeInteger(sameSite['index'], 'response cookie same-site index');
+            readString(sameSite, 'value');
+        }
+    }
+}
+function readRequest(record) {
+    readString(record, 'method');
+    readString(record, 'url');
+    readString(record, 'httpVersion');
+    readNameValueArray(record['headers'], 'request headers');
+    readNameValueArray(record['queryString'], 'request query string');
+    readNameValueArray(record['cookies'], 'request cookies');
+    readFiniteNumber(record, 'headersSize');
+    readFiniteNumber(record, 'bodySize');
+    if (record['postData'] !== undefined) {
+        readRecord(record['postData'], 'request post data');
+    }
+}
+function readResponse(record) {
+    readFiniteNumber(record, 'status');
+    readString(record, 'statusText');
+    readString(record, 'httpVersion');
+    readNameValueArray(record['headers'], 'response headers');
+    readNameValueArray(record['cookies'], 'response cookies');
+    const content = readRecord(record['content'], 'response content');
+    readFiniteNumber(content, 'size');
+    readString(content, 'mimeType');
+    readString(record, 'redirectURL');
+    readFiniteNumber(record, 'headersSize');
+    readFiniteNumber(record, 'bodySize');
+}
+function readNameValueArray(value, name) {
+    if (!Array.isArray(value)) {
+        throw new DestinationTunnelProtocolError(`${name} must be an array`);
+    }
+    for (const item of value) {
+        const record = readRecord(item, name);
+        readString(record, 'name');
+        readString(record, 'value');
+    }
+}
+function readRequiredRequestId(record) {
+    const requestId = readString(record, 'requestId');
+    if (!requestId)
+        throw new DestinationTunnelProtocolError('inspection request ID must not be empty');
+    return requestId;
+}
+function readDateTime(record, key) {
+    const value = readString(record, key);
+    if (!Number.isFinite(Date.parse(value))) {
+        throw new DestinationTunnelProtocolError(`${key} must be an ISO date-time`);
+    }
+    return value;
+}
+function invokeSafely(callback, value, onFailure) {
+    if (!callback)
+        return;
+    try {
+        callback(value);
+    }
+    catch (error) {
+        onFailure?.(error instanceof Error ? error : new Error(String(error)));
+    }
+}
+function decodeCanonicalBase64(value) {
+    try {
+        if (value.length % 4 !== 0)
+            throw new Error('invalid base64 length');
+        const binary = atob(value);
+        if (btoa(binary) !== value)
+            throw new Error('non-canonical base64');
+        return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    }
+    catch {
+        throw new DestinationTunnelProtocolError('inspection body chunk must be valid base64');
+    }
+}
+//# sourceMappingURL=destination-tunnel-inspection.mjs.map
+// EXTERNAL MODULE: external "url"
+var external_url_ = __nccwpck_require__(7016);
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/destination-tunnel.mjs
+
+
+
+
+
+const destination_tunnel_DESTINATION_TUNNEL_VERSION = 1;
+const DESTINATION_TUNNEL_MAX_ROUTES = 10;
+const DESTINATION_TUNNEL_MAX_DOMAINS = 64;
+const DESTINATION_TUNNEL_CONN_ID_HEADER_BYTES = 4;
+/**
+ * IPv4 range used by the device side for synthetic (fake) DNS answers of
+ * matched domain selectors.
+ */
+const DESTINATION_TUNNEL_FAKE_RANGE = '198.18.0.0/15';
+/** Upper bound for per-flow receive windows advertised in open/openOk. */
+const DESTINATION_TUNNEL_MAX_WINDOW = (/* unused pure expression or super */ null && (64 * 1024 * 1024));
+/** Default receive window advertised by generic SDK tunnel clients. */
+const destination_tunnel_DESTINATION_TUNNEL_DEFAULT_WINDOW = (/* unused pure expression or super */ null && (1024 * 1024));
+/** Upper bound for a single windowUpdate increment. */
+const DESTINATION_TUNNEL_MAX_WINDOW_INCREMENT = 2147483647;
+const destination_tunnel_DESTINATION_TUNNEL_DEFAULT_MAX_BODY_BYTES = (/* unused pure expression or super */ null && (10 * 1024 * 1024));
+const DESTINATION_TUNNEL_MAX_BODY_BYTES = (/* unused pure expression or super */ null && (64 * 1024 * 1024));
+const DESTINATION_TUNNEL_DEFAULT_TTL_SECONDS = (/* unused pure expression or super */ null && (72 * 60 * 60));
+const DESTINATION_TUNNEL_MAX_TTL_SECONDS = (/* unused pure expression or super */ null && (30 * 24 * 60 * 60));
+class DestinationTunnelSelectorError extends Error {
+    constructor(code, message) {
+        super(message);
+        this.code = code;
+        this.name = 'DestinationTunnelSelectorError';
+    }
+}
+function destination_tunnel_encodeDestinationTunnelDataFrame(connId, payload) {
+    validateConnectionId(connId);
+    if (payload.length === 0) {
+        throw new DestinationTunnelProtocolError('tunnel data frame must include a payload');
+    }
+    const frame = Buffer.allocUnsafe(DESTINATION_TUNNEL_CONN_ID_HEADER_BYTES + payload.length);
+    frame.writeUInt32BE(connId, 0);
+    payload.copy(frame, DESTINATION_TUNNEL_CONN_ID_HEADER_BYTES);
+    return frame;
+}
+function destination_tunnel_decodeDestinationTunnelDataFrame(frame) {
+    if (frame.length <= DESTINATION_TUNNEL_CONN_ID_HEADER_BYTES) {
+        throw new DestinationTunnelProtocolError('tunnel data frame must include a payload');
+    }
+    return {
+        connId: frame.readUInt32BE(0),
+        payload: frame.subarray(DESTINATION_TUNNEL_CONN_ID_HEADER_BYTES),
+    };
+}
+function validateDestinationTunnelRoutes(routes, options = {}) {
+    if (routes.length === 0) {
+        throw new DestinationTunnelSelectorError('empty', 'at least one tunnel route is required');
+    }
+    if (routes.length > DESTINATION_TUNNEL_MAX_ROUTES) {
+        throw new DestinationTunnelSelectorError('too_many', `at most ${DESTINATION_TUNNEL_MAX_ROUTES} tunnel routes are allowed`);
+    }
+    const canonicalRoutes = [];
+    const seen = new Set();
+    for (const route of routes) {
+        const canonical = canonicalizeDestinationTunnelRoute(route, options.minPort);
+        const key = `${canonical.host}\0${canonical.port}`;
+        if (seen.has(key)) {
+            throw new DestinationTunnelSelectorError('duplicate', `duplicate tunnel route ${canonical.host}:${canonical.port}`);
+        }
+        seen.add(key);
+        canonicalRoutes.push(canonical);
+    }
+    return canonicalRoutes;
+}
+/**
+ * Validate and canonicalize a full selector set. Selector policy specific to
+ * one product (such as the Android bind-listener minimum route port) is
+ * expressed via options rather than separate message shapes.
+ */
+function destination_tunnel_validateDestinationTunnelSelectors(selectors, options = {}) {
+    if (!Array.isArray(selectors)) {
+        throw new DestinationTunnelSelectorError('invalid_host', 'tunnel selectors must be an array');
+    }
+    if (selectors.length === 0) {
+        throw new DestinationTunnelSelectorError('empty', 'at least one tunnel selector is required');
+    }
+    const canonical = [];
+    const seen = new Set();
+    let routeCount = 0;
+    let domainCount = 0;
+    for (const selector of selectors) {
+        const parsed = parseDestinationTunnelSelector(selector, options.minRoutePort);
+        if (parsed.route)
+            routeCount++;
+        else
+            domainCount++;
+        if (routeCount > DESTINATION_TUNNEL_MAX_ROUTES) {
+            throw new DestinationTunnelSelectorError('too_many', `at most ${DESTINATION_TUNNEL_MAX_ROUTES} exact tunnel selectors are allowed`);
+        }
+        if (domainCount > DESTINATION_TUNNEL_MAX_DOMAINS) {
+            throw new DestinationTunnelSelectorError('too_many', `at most ${DESTINATION_TUNNEL_MAX_DOMAINS} domain tunnel selectors are allowed`);
+        }
+        if (seen.has(parsed.value)) {
+            throw new DestinationTunnelSelectorError('duplicate', `duplicate tunnel selector ${parsed.value}`);
+        }
+        seen.add(parsed.value);
+        canonical.push(parsed.value);
+    }
+    return canonical;
+}
+function destination_tunnel_classifyDestinationTunnelSelectors(selectors, options = {}) {
+    const canonical = destination_tunnel_validateDestinationTunnelSelectors(selectors, options);
+    const routes = [];
+    const domains = [];
+    for (const selector of canonical) {
+        const parsed = parseDestinationTunnelSelector(selector, options.minRoutePort);
+        if (parsed.route)
+            routes.push(parsed.route);
+        else
+            domains.push(parsed.domain);
+    }
+    return {
+        ...(routes.length > 0 ? { routes } : {}),
+        ...(domains.length > 0 ? { domains } : {}),
+    };
+}
+function validateDestinationTunnelDomains(domains) {
+    if (domains.length > DESTINATION_TUNNEL_MAX_DOMAINS) {
+        throw new DestinationTunnelSelectorError('too_many', `at most ${DESTINATION_TUNNEL_MAX_DOMAINS} tunnel domains are allowed`);
+    }
+    const canonical = [];
+    const seen = new Set();
+    for (const domain of domains) {
+        const normalized = canonicalizeDestinationTunnelDomain(domain);
+        if (seen.has(normalized)) {
+            throw new DestinationTunnelSelectorError('duplicate', `duplicate tunnel domain ${normalized}`);
+        }
+        seen.add(normalized);
+        canonical.push(normalized);
+    }
+    return canonical;
+}
+/**
+ * Deterministic hash of the canonical selector configuration. Servers echo it
+ * in `ready` so clients can detect config mismatches across reconnects. The
+ * hashed JSON has fixed key order.
+ */
+function destination_tunnel_destinationTunnelConfigHash(selectors, inspection = destination_tunnel_disabledDestinationTunnelInspection()) {
+    const canonical = destination_tunnel_validateDestinationTunnelSelectors(selectors);
+    const canonicalInspection = destination_tunnel_normalizeDestinationTunnelInspection(inspection);
+    const parts = [
+        `"version":${destination_tunnel_DESTINATION_TUNNEL_VERSION}`,
+        `"selectors":[${canonical.map((selector) => JSON.stringify(selector)).join(',')}]`,
+    ];
+    parts.push(`"inspection":{"enabled":${canonicalInspection.enabled},"captureBodies":${canonicalInspection.captureBodies},"maxBodyBytes":${canonicalInspection.maxBodyBytes},"persist":${canonicalInspection.persist},"ttlSeconds":${canonicalInspection.ttlSeconds}}`);
+    return crypto
+        .createHash('sha256')
+        .update(`{${parts.join(',')}}`, 'utf8')
+        .digest('hex');
+}
+function destination_tunnel_normalizeDestinationTunnelInspection(inspection) {
+    const enabled = inspection.enabled ?? false;
+    const captureBodies = inspection.captureBodies ?? false;
+    const maxBodyBytes = inspection.maxBodyBytes ?? destination_tunnel_DESTINATION_TUNNEL_DEFAULT_MAX_BODY_BYTES;
+    const persist = inspection.persist ?? false;
+    const ttlSeconds = inspection.ttlSeconds ?? DESTINATION_TUNNEL_DEFAULT_TTL_SECONDS;
+    if (captureBodies && !enabled) {
+        throw new DestinationTunnelProtocolError('captureBodies requires inspection to be enabled');
+    }
+    if (persist && !enabled) {
+        throw new DestinationTunnelProtocolError('persist requires inspection to be enabled');
+    }
+    if (!Number.isInteger(maxBodyBytes) ||
+        maxBodyBytes < 1 ||
+        maxBodyBytes > DESTINATION_TUNNEL_MAX_BODY_BYTES) {
+        throw new DestinationTunnelProtocolError(`maxBodyBytes must be an integer between 1 and ${DESTINATION_TUNNEL_MAX_BODY_BYTES}`);
+    }
+    if (!Number.isInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > DESTINATION_TUNNEL_MAX_TTL_SECONDS) {
+        throw new DestinationTunnelProtocolError(`ttlSeconds must be an integer between 1 and ${DESTINATION_TUNNEL_MAX_TTL_SECONDS}`);
+    }
+    return { enabled, captureBodies, maxBodyBytes, persist, ttlSeconds };
+}
+function destination_tunnel_disabledDestinationTunnelInspection() {
+    return destination_tunnel_normalizeDestinationTunnelInspection({ enabled: false, captureBodies: false });
+}
+/** Selector IDs are one-based positions in the canonical selector array. */
+function destinationTunnelSelectorIds(selectors) {
+    return destination_tunnel_validateDestinationTunnelSelectors(selectors).map((_, index) => `selector-${index + 1}`);
+}
+function destinationTunnelDomainMatches(pattern, host) {
+    const candidate = host.toLowerCase();
+    if (pattern.startsWith('*.')) {
+        const base = pattern.slice(2);
+        return candidate.length > base.length + 1 && candidate.endsWith(`.${base}`);
+    }
+    return candidate === pattern;
+}
+/**
+ * Verify a server OPEN against the negotiated selectors. Every OPEN must name
+ * a known selector ID and a target that the selector actually covers.
+ */
+function destination_tunnel_assertDestinationTunnelOpenAllowed(message, selectors) {
+    const canonical = destination_tunnel_validateDestinationTunnelSelectors(selectors);
+    const match = /^selector-([1-9]\d*)$/.exec(message.selectorId);
+    const index = match?.[1] ? Number(match[1]) - 1 : -1;
+    const fail = () => {
+        throw new DestinationTunnelProtocolError(`server requested undeclared selector ${message.selectorId} ${message.host}:${message.port}`);
+    };
+    if (index < 0)
+        fail();
+    if (message.port === 53)
+        fail();
+    const selector = canonical[index];
+    if (selector === undefined)
+        return fail();
+    const parsed = parseDestinationTunnelSelector(selector);
+    if (parsed.route) {
+        if (message.host !== parsed.route.host || message.port !== parsed.route.port)
+            fail();
+        return 'route';
+    }
+    if (!destinationTunnelDomainMatches(parsed.domain, message.host))
+        fail();
+    return 'domain';
+}
+function destination_tunnel_assertDestinationTunnelReady(message) {
+    if (message.version !== destination_tunnel_DESTINATION_TUNNEL_VERSION) {
+        throw new DestinationTunnelProtocolError(`unsupported tunnel version ${message.version}`);
+    }
+}
+function destination_tunnel_encodeDestinationTunnelClientMessage(message) {
+    const record = readRecord(message, 'tunnel control message');
+    const type = readString(record, 'type');
+    switch (type) {
+        case 'start': {
+            const version = readInteger(record, 'version');
+            if (version !== destination_tunnel_DESTINATION_TUNNEL_VERSION) {
+                throw new DestinationTunnelProtocolError(`unsupported tunnel version ${version}`);
+            }
+            const selectors = destination_tunnel_validateDestinationTunnelSelectors(readArray(record, 'selectors').map((value) => {
+                if (typeof value !== 'string') {
+                    throw new DestinationTunnelProtocolError('tunnel selector must be a string');
+                }
+                return value;
+            }));
+            const inspection = readInspectionConfig(record);
+            return JSON.stringify({
+                type,
+                version,
+                selectors,
+                inspection,
+                window: readWindow(record),
+            });
+        }
+        case 'openOk':
+            return JSON.stringify({
+                type,
+                connId: readConnectionId(record),
+                transport: readTransportResult(record),
+                window: readWindow(record),
+            });
+        case 'fin':
+            return JSON.stringify({ type, connId: readConnectionId(record) });
+        case 'openFail':
+        case 'reset':
+            return JSON.stringify({
+                type,
+                connId: readConnectionId(record),
+                reason: readString(record, 'reason'),
+                ...readOptionalString(record, 'osCode'),
+            });
+        case 'windowUpdate':
+            return JSON.stringify({
+                type,
+                connId: readConnectionId(record),
+                increment: readWindowIncrement(record),
+            });
+        default:
+            throw new DestinationTunnelProtocolError(`unknown tunnel control message type ${type}`);
+    }
+}
+function destination_tunnel_decodeDestinationTunnelServerMessage(value) {
+    const message = readRecord(value, 'tunnel control message');
+    const type = readString(message, 'type');
+    switch (type) {
+        case 'ready':
+            return {
+                type,
+                version: readInteger(message, 'version'),
+                tunnelId: readString(message, 'tunnelId'),
+                selectors: readArray(message, 'selectors').map((value, index) => readSelectorReport(value, `selector-${index + 1}`)),
+                configHash: readString(message, 'configHash'),
+            };
+        case 'open':
+            return {
+                type,
+                connId: readConnectionId(message),
+                selectorId: readString(message, 'selectorId'),
+                host: readString(message, 'host'),
+                port: readPort(message, 'port'),
+                transport: readTransportRequest(message),
+                window: readWindow(message),
+            };
+        case 'fin':
+            return { type, connId: readConnectionId(message) };
+        case 'reset':
+            return {
+                type,
+                connId: readConnectionId(message),
+                reason: readString(message, 'reason'),
+                ...readOptionalString(message, 'osCode'),
+            };
+        case 'windowUpdate':
+            return {
+                type,
+                connId: readConnectionId(message),
+                increment: readWindowIncrement(message),
+            };
+        case 'error':
+            return { type, code: readString(message, 'code') };
+        default:
+            throw new DestinationTunnelProtocolError(`unknown tunnel control message type ${type}`);
+    }
+}
+function parseDestinationTunnelSelector(selector, minRoutePort = 1) {
+    if (typeof selector !== 'string' || selector.length === 0) {
+        throw new DestinationTunnelSelectorError('empty', 'tunnel selector must not be empty');
+    }
+    if (!selector.startsWith('[') && !selector.includes(':')) {
+        const domain = canonicalizeDestinationTunnelDomain(selector);
+        return { value: domain, domain };
+    }
+    let host;
+    let portText;
+    if (selector.startsWith('[')) {
+        const match = /^\[([^\]]+)\]:(\d+)$/.exec(selector);
+        if (!match?.[1] || !match[2]) {
+            throw new DestinationTunnelSelectorError('invalid_host', `invalid tunnel selector ${selector}`);
+        }
+        host = match[1];
+        portText = match[2];
+    }
+    else {
+        const separator = selector.lastIndexOf(':');
+        if (separator <= 0 || selector.indexOf(':') !== separator) {
+            throw new DestinationTunnelSelectorError('invalid_host', `invalid tunnel selector ${selector}`);
+        }
+        host = selector.slice(0, separator);
+        portText = selector.slice(separator + 1);
+    }
+    if (!/^\d+$/.test(portText)) {
+        throw new DestinationTunnelSelectorError('invalid_port', `invalid tunnel selector port ${portText}`);
+    }
+    const route = canonicalizeDestinationTunnelRoute({ host, port: Number(portText) }, minRoutePort);
+    const formattedHost = route.host.includes(':') ? `[${route.host}]` : route.host;
+    return { value: `${formattedHost}:${route.port}`, route };
+}
+function canonicalizeDestinationTunnelRoute(route, minPort = 1) {
+    if (!Number.isInteger(route.port) || route.port < minPort || route.port > 65535 || route.port === 53) {
+        throw new DestinationTunnelSelectorError('invalid_port', `invalid tunnel route port ${route.port}`);
+    }
+    const asciiHost = Buffer.byteLength(route.host, 'utf8') === route.host.length;
+    if (asciiHost && route.host.toLowerCase() === 'localhost') {
+        return { host: 'localhost', port: route.port };
+    }
+    const ipVersion = net.isIP(route.host);
+    if (ipVersion === 4) {
+        return { host: route.host, port: route.port };
+    }
+    if (ipVersion === 6) {
+        const hostname = new URL(`http://[${route.host}]/`).hostname;
+        const canonical = hostname.slice(1, -1);
+        if (canonical !== '::1' && /^::(?:[0-9a-f]{1,4}:)?[0-9a-f]{1,4}$/.test(canonical)) {
+            throw new DestinationTunnelSelectorError('invalid_host', `invalid tunnel route host ${route.host}`);
+        }
+        return { host: canonicalizeIPv6(canonical), port: route.port };
+    }
+    throw new DestinationTunnelSelectorError('invalid_host', `invalid tunnel route host ${route.host}`);
+}
+function canonicalizeDestinationTunnelDomain(domain) {
+    const invalid = () => {
+        throw new DestinationTunnelSelectorError('invalid_domain', `invalid tunnel domain ${domain}`);
+    };
+    if (typeof domain !== 'string' || domain.length === 0 || domain.length > 260)
+        invalid();
+    // ASCII only: reject anything IDNA mapping would change to avoid ambiguity
+    // between implementations. Users provide punycode (xn--) names directly.
+    if (Buffer.byteLength(domain, 'utf8') !== domain.length)
+        invalid();
+    const lowered = domain.toLowerCase();
+    const wildcard = lowered.startsWith('*.');
+    const base = wildcard ? lowered.slice(2) : lowered;
+    if (base.length === 0 || base.length > 253)
+        invalid();
+    if (base.includes('*'))
+        invalid();
+    if (base.endsWith('.') || base.startsWith('.'))
+        invalid();
+    if (net.isIP(base) !== 0)
+        invalid();
+    if (base === 'localhost')
+        invalid();
+    if (domainToASCII(base) !== base)
+        invalid();
+    const labels = base.split('.');
+    for (const label of labels) {
+        if (label.length === 0 || label.length > 63)
+            invalid();
+        if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(label))
+            invalid();
+    }
+    // All-numeric final labels would be ambiguous with IPv4 literals.
+    const finalLabel = labels[labels.length - 1];
+    if (finalLabel !== undefined && /^\d+$/.test(finalLabel))
+        invalid();
+    return wildcard ? `*.${base}` : base;
+}
+function canonicalizeIPv6(host) {
+    const mappedIPv4 = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(host);
+    if (!mappedIPv4?.[1] || !mappedIPv4[2]) {
+        return host;
+    }
+    const high = Number.parseInt(mappedIPv4[1], 16);
+    const low = Number.parseInt(mappedIPv4[2], 16);
+    return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
+}
+function readSelectorReport(value, expectedId) {
+    const report = readRecord(value, 'tunnel selector');
+    const id = readString(report, 'id');
+    if (id !== expectedId) {
+        throw new DestinationTunnelProtocolError(`invalid tunnel selector id ${id}`);
+    }
+    const kind = readString(report, 'kind');
+    if (kind !== 'route' && kind !== 'domain') {
+        throw new DestinationTunnelProtocolError(`invalid tunnel selector kind ${kind}`);
+    }
+    const result = {
+        id,
+        kind,
+        value: readString(report, 'value'),
+    };
+    if (report['binds'] !== undefined) {
+        result.binds = readArray(report, 'binds').map(readBindReport);
+    }
+    return result;
+}
+function readBindReport(value) {
+    const bind = readRecord(value, 'tunnel bind report');
+    const status = readString(bind, 'status');
+    if (status !== 'ok' && status !== 'conflict' && status !== 'error') {
+        throw new DestinationTunnelProtocolError(`invalid tunnel bind status ${status}`);
+    }
+    return {
+        address: readString(bind, 'address'),
+        status,
+        ...readOptionalString(bind, 'osCode'),
+    };
+}
+function readInspectionConfig(record) {
+    const inspection = readRecord(record['inspection'], 'inspection');
+    const enabled = readBoolean(inspection, 'enabled');
+    const captureBodies = readBoolean(inspection, 'captureBodies');
+    const maxBodyBytes = readInteger(inspection, 'maxBodyBytes');
+    const persist = readBoolean(inspection, 'persist');
+    const ttlSeconds = readInteger(inspection, 'ttlSeconds');
+    return destination_tunnel_normalizeDestinationTunnelInspection({
+        enabled,
+        captureBodies,
+        maxBodyBytes,
+        persist,
+        ttlSeconds,
+    });
+}
+function readTransportRequest(record) {
+    const transport = readRecord(record['transport'], 'transport');
+    const type = readString(transport, 'type');
+    if (type === 'tcp') {
+        return { type };
+    }
+    if (type === 'tls') {
+        const serverName = readString(transport, 'serverName');
+        if (serverName.length === 0) {
+            throw new DestinationTunnelProtocolError('TLS transport requires serverName');
+        }
+        const alpnProtocols = readArray(transport, 'alpnProtocols').map((protocol) => {
+            if (typeof protocol !== 'string' || protocol.length === 0) {
+                throw new DestinationTunnelProtocolError('alpnProtocols must contain non-empty strings');
+            }
+            return protocol;
+        });
+        return { type, serverName, alpnProtocols };
+    }
+    throw new DestinationTunnelProtocolError(`unsupported tunnel transport ${type}`);
+}
+function readTransportResult(record) {
+    const transport = readRecord(record['transport'], 'transport');
+    const type = readString(transport, 'type');
+    if (type !== 'tcp' && type !== 'tls') {
+        throw new DestinationTunnelProtocolError(`unsupported tunnel transport ${type}`);
+    }
+    return {
+        type,
+        ...readOptionalString(transport, 'alpnProtocol'),
+        ...readOptionalString(transport, 'remoteAddress'),
+        ...readOptionalNonNegativeInteger(transport, 'dnsMs'),
+        ...readOptionalNonNegativeInteger(transport, 'connectMs'),
+        ...readOptionalNonNegativeInteger(transport, 'tlsMs'),
+    };
+}
+function readPort(record, key) {
+    const value = readInteger(record, key);
+    if (value < 1 || value > 65535) {
+        throw new DestinationTunnelProtocolError(`${key} must be between 1 and 65535`);
+    }
+    return value;
+}
+function readWindow(record) {
+    const value = readInteger(record, 'window');
+    if (value < 1 || value > DESTINATION_TUNNEL_MAX_WINDOW) {
+        throw new DestinationTunnelProtocolError(`window must be an integer between 1 and ${DESTINATION_TUNNEL_MAX_WINDOW}`);
+    }
+    return value;
+}
+function readWindowIncrement(record) {
+    const value = readInteger(record, 'increment');
+    if (value < 1 || value > DESTINATION_TUNNEL_MAX_WINDOW_INCREMENT) {
+        throw new DestinationTunnelProtocolError(`increment must be an integer between 1 and ${DESTINATION_TUNNEL_MAX_WINDOW_INCREMENT}`);
+    }
+    return value;
+}
+function readConnectionId(record) {
+    const value = readInteger(record, 'connId');
+    validateConnectionId(value);
+    return value;
+}
+function validateConnectionId(value) {
+    if (!Number.isInteger(value) || value < 0 || value > 4294967295) {
+        throw new DestinationTunnelProtocolError('connId must be an unsigned 32-bit integer');
+    }
+}
+//# sourceMappingURL=destination-tunnel.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/destination-tunnel-dialer.mjs
+
+
+
+
+
+
+
+
+const blockedResolvedAddresses = new external_net_.BlockList();
+blockedResolvedAddresses.addSubnet('0.0.0.0', 8, 'ipv4');
+blockedResolvedAddresses.addSubnet('127.0.0.0', 8, 'ipv4');
+blockedResolvedAddresses.addSubnet('169.254.0.0', 16, 'ipv4');
+blockedResolvedAddresses.addSubnet('224.0.0.0', 3, 'ipv4');
+blockedResolvedAddresses.addSubnet('::', 96, 'ipv6');
+blockedResolvedAddresses.addSubnet('fe80::', 10, 'ipv6');
+blockedResolvedAddresses.addSubnet('ff00::', 8, 'ipv6');
+blockedResolvedAddresses.addSubnet('::ffff:0.0.0.0', 104, 'ipv6');
+blockedResolvedAddresses.addSubnet('::ffff:127.0.0.0', 104, 'ipv6');
+blockedResolvedAddresses.addSubnet('::ffff:169.254.0.0', 112, 'ipv6');
+blockedResolvedAddresses.addSubnet('::ffff:224.0.0.0', 99, 'ipv6');
+/** Thrown (message prefix) when the server terminates the session with `error`. */
+const DESTINATION_TUNNEL_SERVER_ERROR_PREFIX = 'destination tunnel failed: ';
+/**
+ * True when the failure is a terminal protocol/policy rejection from the
+ * server rather than a transient transport problem. Reconnect supervisors
+ * must not retry terminal failures.
+ */
+function isTerminalDestinationTunnelError(error) {
+    return error instanceof Error && error.message.startsWith(DESTINATION_TUNNEL_SERVER_ERROR_PREFIX);
+}
+async function destination_tunnel_dialer_startDestinationTcpTunnel(remoteURL, token, options) {
+    const selectors = validateDestinationTunnelSelectors(options.selectors);
+    const routes = classifyDestinationTunnelSelectors(selectors).routes ?? [];
+    const inspection = normalizeDestinationTunnelInspection(options.inspection ?? disabledDestinationTunnelInspection());
+    const logLevel = options.logLevel ?? 'info';
+    const creditWindow = positiveInteger(options.window ?? DESTINATION_TUNNEL_DEFAULT_WINDOW, 'window');
+    const maxConnections = positiveInteger(options.maxConnections ?? 64, 'maxConnections');
+    const maxPendingBytesPerConnection = positiveInteger(options.maxPendingBytesPerConnection ?? 16 * 1024 * 1024, 'maxPendingBytesPerConnection');
+    const maxTotalPendingBytes = positiveInteger(options.maxTotalPendingBytes ?? 16 * 1024 * 1024, 'maxTotalPendingBytes');
+    const maxBufferedBytes = positiveInteger(options.maxBufferedBytes ?? 4 * 1024 * 1024, 'maxBufferedBytes');
+    const connectTimeoutMs = positiveInteger(options.connectTimeoutMs ?? 10000, 'connectTimeoutMs');
+    const handshakeTimeoutMs = positiveInteger(options.handshakeTimeoutMs ?? 15000, 'handshakeTimeoutMs');
+    const livenessTimeoutMs = positiveInteger(options.livenessTimeoutMs ?? 90000, 'livenessTimeoutMs');
+    const pingIntervalMs = Math.min(30000, Math.max(1, Math.floor(livenessTimeoutMs / 3)));
+    const resumeBelowBufferedBytes = maxBufferedBytes / 4;
+    const hardMaxBufferedBytes = maxBufferedBytes + Math.max(64 * 1024, Math.floor(maxBufferedBytes / 4));
+    const logger = {
+        debug: (...args) => {
+            if (logLevel === 'debug')
+                console.log('[DestinationTunnel]', ...args);
+        },
+        info: (...args) => {
+            if (logLevel === 'info' || logLevel === 'debug')
+                console.log('[DestinationTunnel]', ...args);
+        },
+        warn: (...args) => {
+            if (logLevel === 'warn' || logLevel === 'info' || logLevel === 'debug') {
+                console.warn('[DestinationTunnel]', ...args);
+            }
+        },
+        error: (...args) => {
+            if (logLevel !== 'none')
+                console.error('[DestinationTunnel]', ...args);
+        },
+    };
+    return new Promise((resolve, reject) => {
+        const connections = new Map();
+        const recentlyClosed = new Map();
+        const stateChangeCallbacks = new Set();
+        const url = new URL(remoteURL);
+        const proxyAgent = nodeProxyTransport.getWebSocketAgent(url.toString());
+        const ws = new WebSocket(url.toString(), {
+            headers: { Authorization: `Bearer ${token}` },
+            ...(proxyAgent ? { agent: proxyAgent } : {}),
+            perMessageDeflate: false,
+        });
+        let connectionState = 'connecting';
+        let pingInterval;
+        let handshakeTimer;
+        let livenessTimer;
+        let tunnelReady = false;
+        let closed = false;
+        let inspectionStream;
+        let pausedForBackpressure = false;
+        let totalPendingWriteBytes = 0;
+        const updateConnectionState = (state) => {
+            if (connectionState === state)
+                return;
+            connectionState = state;
+            for (const callback of stateChangeCallbacks) {
+                try {
+                    callback(state);
+                }
+                catch (error) {
+                    logger.error('Connection state callback failed:', error);
+                }
+            }
+        };
+        const getConnectionState = () => connectionState;
+        const onConnectionStateChange = (callback) => {
+            stateChangeCallbacks.add(callback);
+            return () => stateChangeCallbacks.delete(callback);
+        };
+        const markRecentlyClosed = (connId) => {
+            const existingTimer = recentlyClosed.get(connId);
+            if (existingTimer)
+                clearTimeout(existingTimer);
+            const timer = setTimeout(() => recentlyClosed.delete(connId), 30000);
+            timer.unref();
+            recentlyClosed.set(connId, timer);
+        };
+        const removeConnection = (connId, destroySocket) => {
+            const connection = connections.get(connId);
+            if (!connection)
+                return;
+            connections.delete(connId);
+            connection.abortController.abort();
+            clearTimeout(connection.connectTimer);
+            markRecentlyClosed(connId);
+            if (destroySocket && connection.socket && !connection.socket.destroyed) {
+                connection.socket.destroy();
+            }
+        };
+        const closeAllConnections = () => {
+            for (const connId of Array.from(connections.keys())) {
+                removeConnection(connId, true);
+            }
+            for (const timer of recentlyClosed.values()) {
+                clearTimeout(timer);
+            }
+            recentlyClosed.clear();
+            pausedForBackpressure = false;
+        };
+        const close = () => {
+            if (closed)
+                return;
+            closed = true;
+            if (pingInterval) {
+                clearInterval(pingInterval);
+                pingInterval = undefined;
+            }
+            if (handshakeTimer) {
+                clearTimeout(handshakeTimer);
+                handshakeTimer = undefined;
+            }
+            if (livenessTimer) {
+                clearTimeout(livenessTimer);
+                livenessTimer = undefined;
+            }
+            closeAllConnections();
+            inspectionStream?.close();
+            inspectionStream = undefined;
+            ws.removeAllListeners('open');
+            ws.removeAllListeners('message');
+            ws.removeAllListeners('ping');
+            ws.removeAllListeners('pong');
+            if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+                ws.close(1000, 'close');
+            }
+            updateConnectionState('disconnected');
+        };
+        const failTransport = (error) => {
+            if (closed)
+                return;
+            logger.error(error.message);
+            close();
+            if (!tunnelReady) {
+                reject(error);
+            }
+        };
+        const mayReadFromSocket = (connection) => !pausedForBackpressure && connection.creditQueueBytes === 0;
+        const pauseForBackpressure = () => {
+            if (pausedForBackpressure)
+                return;
+            pausedForBackpressure = true;
+            for (const connection of connections.values()) {
+                if (connection.socket && !connection.socket.destroyed)
+                    connection.socket.pause();
+            }
+        };
+        const resumeIfDrained = () => {
+            if (!pausedForBackpressure || ws.bufferedAmount >= resumeBelowBufferedBytes)
+                return;
+            pausedForBackpressure = false;
+            for (const connection of connections.values()) {
+                // Flows still waiting on per-flow credit stay paused; they resume
+                // when the server grants more window, keeping one stalled flow from
+                // holding every other flow back.
+                if (connection.socket && !connection.socket.destroyed && mayReadFromSocket(connection)) {
+                    connection.socket.resume();
+                }
+            }
+        };
+        const frameQueued = () => {
+            if (ws.bufferedAmount > hardMaxBufferedBytes) {
+                failTransport(new Error('destination tunnel WebSocket send buffer exceeded its hard limit'));
+            }
+            else if (!pausedForBackpressure && ws.bufferedAmount > maxBufferedBytes) {
+                pauseForBackpressure();
+            }
+        };
+        const frameSent = (error) => {
+            if (error) {
+                failTransport(error);
+            }
+            else {
+                resumeIfDrained();
+            }
+        };
+        const sendControl = (message) => {
+            if (closed || ws.readyState !== WebSocket.OPEN) {
+                failTransport(new Error('destination tunnel WebSocket is not open'));
+                return;
+            }
+            ws.send(encodeDestinationTunnelClientMessage(message), frameSent);
+            frameQueued();
+        };
+        const sendData = (connId, payload) => {
+            if (closed || ws.readyState !== WebSocket.OPEN) {
+                failTransport(new Error('destination tunnel WebSocket closed while sending data'));
+                return;
+            }
+            ws.send(encodeDestinationTunnelDataFrame(connId, payload), { binary: true }, frameSent);
+            frameQueued();
+        };
+        const sendOpenFailure = (connId, reason, osCode) => {
+            sendControl({
+                type: 'openFail',
+                connId,
+                reason,
+                ...(osCode ? { osCode } : {}),
+            });
+            markRecentlyClosed(connId);
+        };
+        const sendReset = (connId, reason, osCode) => {
+            sendControl({
+                type: 'reset',
+                connId,
+                reason,
+                ...(osCode ? { osCode } : {}),
+            });
+        };
+        /**
+         * Push local socket bytes toward the server through the per-flow credit
+         * gate. Chunks beyond the current credit wait in a FIFO queue with the
+         * local socket paused, so a server-throttled flow stops reading instead
+         * of buffering unboundedly.
+         */
+        const pushThroughCreditGate = (connId, connection, payload) => {
+            if (payload && payload.length > 0) {
+                connection.creditQueue.push(payload);
+                connection.creditQueueBytes += payload.length;
+            }
+            while (connection.creditQueue.length > 0 && connection.sendCredit > 0) {
+                const chunk = connection.creditQueue[0];
+                if (chunk.length <= connection.sendCredit) {
+                    connection.creditQueue.shift();
+                    connection.creditQueueBytes -= chunk.length;
+                    connection.sendCredit -= chunk.length;
+                    sendData(connId, chunk);
+                }
+                else {
+                    const portion = chunk.subarray(0, connection.sendCredit);
+                    connection.creditQueue[0] = chunk.subarray(connection.sendCredit);
+                    connection.creditQueueBytes -= portion.length;
+                    connection.sendCredit = 0;
+                    sendData(connId, portion);
+                }
+                if (closed)
+                    return;
+            }
+            if (connection.creditQueue.length === 0 && connection.finPending) {
+                // The local socket ended while data was still waiting on credit; the
+                // queue has drained, so half-close can now be signaled in order.
+                connection.finPending = false;
+                connection.localInputEnded = true;
+                sendControl({ type: 'fin', connId });
+            }
+            if (!connection.socket || connection.socket.destroyed)
+                return;
+            if (connection.creditQueueBytes > 0) {
+                connection.socket.pause();
+            }
+            else if (!pausedForBackpressure) {
+                connection.socket.resume();
+            }
+        };
+        const dialTarget = async (message) => {
+            // Domain selectors resolve through the user's OS resolver and may only
+            // reach ordinary unicast targets. Loopback and similar special targets
+            // require an explicit exact route grant.
+            const startedAt = Date.now();
+            const results = await dns.promises.lookup(message.host, { all: true, verbatim: true });
+            const dnsMs = Date.now() - startedAt;
+            for (const result of results) {
+                if (isDialableResolvedAddress(result.address, message.port, routes)) {
+                    return { host: result.address, dnsMs };
+                }
+            }
+            const blockedError = new Error(`all resolved addresses for ${message.host} are blocked`);
+            blockedError.code = 'EBLOCKED';
+            throw blockedError;
+        };
+        const wrapTls = (socket, transport, abortController) => new Promise((resolveTls, rejectTls) => {
+            const tlsSocket = tls.connect({
+                socket,
+                rejectUnauthorized: true,
+                servername: transport.serverName,
+                ALPNProtocols: transport.alpnProtocols,
+            });
+            tlsSocket.allowHalfOpen = true;
+            const cleanup = () => {
+                tlsSocket.removeListener('secureConnect', onSecureConnect);
+                tlsSocket.removeListener('error', onError);
+                abortController.signal.removeEventListener('abort', onAbort);
+            };
+            const onSecureConnect = () => {
+                cleanup();
+                tlsSocket.pause();
+                resolveTls(tlsSocket);
+            };
+            const onError = (error) => {
+                cleanup();
+                rejectTls(error);
+            };
+            const onAbort = () => {
+                cleanup();
+                tlsSocket.destroy();
+                rejectTls(Object.assign(new Error('TLS connection cancelled'), { code: 'ECANCELED' }));
+            };
+            tlsSocket.once('secureConnect', onSecureConnect);
+            tlsSocket.once('error', onError);
+            if (abortController.signal.aborted) {
+                onAbort();
+            }
+            else {
+                abortController.signal.addEventListener('abort', onAbort, { once: true });
+            }
+        });
+        const handleOpen = (message) => {
+            let kind;
+            try {
+                kind = assertDestinationTunnelOpenAllowed(message, selectors);
+            }
+            catch {
+                sendOpenFailure(message.connId, 'selector_not_allowed');
+                return;
+            }
+            if (connections.has(message.connId) || recentlyClosed.has(message.connId)) {
+                throw new DestinationTunnelProtocolError(`server reused connection ID ${message.connId}`);
+            }
+            if (connections.size >= maxConnections) {
+                sendOpenFailure(message.connId, 'resource_exhausted');
+                return;
+            }
+            const abortController = new AbortController();
+            const connectTimer = setTimeout(() => {
+                if (connections.get(message.connId)?.phase !== 'connecting')
+                    return;
+                logger.warn(`Failed to connect to ${message.host}:${message.port}: timed out`);
+                sendOpenFailure(message.connId, 'connection_timed_out', 'ETIMEDOUT');
+                removeConnection(message.connId, true);
+            }, connectTimeoutMs);
+            connectTimer.unref();
+            const connection = {
+                phase: 'connecting',
+                abortController,
+                connectTimer,
+                localInputEnded: false,
+                remoteInputEnded: false,
+                pendingWriteBytes: 0,
+                sendCredit: message.window,
+                creditQueue: [],
+                creditQueueBytes: 0,
+                finPending: false,
+                deliveredSinceUpdate: 0,
+            };
+            connections.set(message.connId, connection);
+            void (async () => {
+                let host = message.host;
+                if (kind === 'domain') {
+                    const resolved = await dialTarget(message);
+                    host = resolved.host;
+                    connection.dnsMs = resolved.dnsMs;
+                }
+                if (connections.get(message.connId) !== connection || closed)
+                    return;
+                const tcp = await nodeProxyTransport.connectTcp({
+                    host,
+                    port: message.port,
+                    proxyLookupHost: message.host,
+                    proxyLookupProtocol: message.transport.type === 'tls' ? 'https:' : 'http:',
+                    timeoutMs: connectTimeoutMs,
+                    signal: abortController.signal,
+                });
+                if (connections.get(message.connId) !== connection || closed) {
+                    tcp.socket.destroy();
+                    return;
+                }
+                connection.socket = tcp.socket;
+                let socket = tcp.socket;
+                let tlsMs;
+                if (message.transport.type === 'tls') {
+                    const tlsStartedAt = Date.now();
+                    socket = await wrapTls(tcp.socket, message.transport, abortController);
+                    tlsMs = Date.now() - tlsStartedAt;
+                    if (connections.get(message.connId) !== connection || closed) {
+                        socket.destroy();
+                        return;
+                    }
+                    connection.socket = socket;
+                }
+                clearTimeout(connectTimer);
+                socket.on('data', (payload) => {
+                    if (connections.get(message.connId) !== connection || connection.phase !== 'open')
+                        return;
+                    pushThroughCreditGate(message.connId, connection, payload);
+                });
+                socket.once('end', () => {
+                    if (connections.get(message.connId) !== connection || connection.phase !== 'open')
+                        return;
+                    if (connection.creditQueueBytes > 0) {
+                        // Queued bytes are still waiting on send credit; fin must follow
+                        // them, so defer it until the credit gate drains the queue.
+                        connection.finPending = true;
+                        return;
+                    }
+                    connection.localInputEnded = true;
+                    sendControl({ type: 'fin', connId: message.connId });
+                });
+                socket.once('error', (error) => {
+                    if (connections.get(message.connId) !== connection)
+                        return;
+                    sendReset(message.connId, 'connection_error', error.code);
+                    removeConnection(message.connId, true);
+                });
+                socket.once('close', () => {
+                    if (connections.get(message.connId) !== connection)
+                        return;
+                    if (!connection.localInputEnded || !connection.remoteInputEnded) {
+                        sendReset(message.connId, 'connection_error');
+                    }
+                    removeConnection(message.connId, false);
+                });
+                connection.phase = 'open';
+                sendControl({
+                    type: 'openOk',
+                    connId: message.connId,
+                    transport: {
+                        type: message.transport.type,
+                        ...(tcp.remoteAddress === undefined ? {} : { remoteAddress: tcp.remoteAddress }),
+                        ...(connection.dnsMs === undefined ? {} : { dnsMs: connection.dnsMs }),
+                        connectMs: tcp.connectMs,
+                        ...(tlsMs === undefined ? {} : { tlsMs }),
+                        ...(socket instanceof tls.TLSSocket && socket.alpnProtocol ?
+                            { alpnProtocol: socket.alpnProtocol }
+                            : {}),
+                    },
+                    window: creditWindow,
+                });
+                logger.debug(`Forwarding connection ${message.connId} to ${message.host}:${message.port}`);
+                if (!pausedForBackpressure && connection.creditQueueBytes === 0)
+                    socket.resume();
+            })().catch((error) => {
+                if (connections.get(message.connId) !== connection)
+                    return;
+                logger.warn(`Failed to connect to ${message.host}:${message.port}: ${error.code ?? error.message}`);
+                const reason = error.code === 'EBLOCKED' ? 'selector_not_allowed' : classifyOpenFailure(error);
+                sendOpenFailure(message.connId, reason, error.code === 'EBLOCKED' ? undefined : error.code);
+                removeConnection(message.connId, true);
+            });
+        };
+        const findOpenConnection = (connId) => {
+            const connection = connections.get(connId);
+            if (connection?.phase === 'open' && connection.socket)
+                return connection;
+            if (connection) {
+                sendReset(connId, 'protocol_error');
+                removeConnection(connId, true);
+            }
+            else if (!recentlyClosed.has(connId)) {
+                sendReset(connId, 'protocol_error');
+                markRecentlyClosed(connId);
+            }
+            return undefined;
+        };
+        const handleRemoteFIN = (connId) => {
+            const connection = findOpenConnection(connId);
+            if (!connection)
+                return;
+            if (connection.remoteInputEnded) {
+                sendReset(connId, 'protocol_error');
+                removeConnection(connId, true);
+                return;
+            }
+            connection.remoteInputEnded = true;
+            connection.socket.end();
+        };
+        const handleRemoteReset = (connId) => {
+            if (connections.has(connId)) {
+                removeConnection(connId, true);
+            }
+        };
+        const handleRemoteWindowUpdate = (connId, increment) => {
+            const connection = connections.get(connId);
+            // Updates racing a local close are expected; ignore unknown flows.
+            if (!connection || connection.phase !== 'open')
+                return;
+            connection.sendCredit += increment;
+            pushThroughCreditGate(connId, connection);
+        };
+        const handleBinary = (frame) => {
+            if (!tunnelReady) {
+                throw new DestinationTunnelProtocolError('received tunnel data before READY');
+            }
+            const { connId, payload } = decodeDestinationTunnelDataFrame(frame);
+            const connection = findOpenConnection(connId);
+            if (!connection)
+                return;
+            if (connection.remoteInputEnded) {
+                sendReset(connId, 'protocol_error');
+                removeConnection(connId, true);
+                return;
+            }
+            const nextConnectionPendingBytes = connection.pendingWriteBytes + payload.length;
+            const nextTotalPendingBytes = totalPendingWriteBytes + payload.length;
+            if (nextConnectionPendingBytes > maxPendingBytesPerConnection ||
+                nextTotalPendingBytes > maxTotalPendingBytes) {
+                sendReset(connId, 'resource_exhausted');
+                removeConnection(connId, true);
+                return;
+            }
+            connection.pendingWriteBytes = nextConnectionPendingBytes;
+            totalPendingWriteBytes = nextTotalPendingBytes;
+            connection.socket.write(payload, (error) => {
+                connection.pendingWriteBytes -= payload.length;
+                totalPendingWriteBytes -= payload.length;
+                if (error && connections.get(connId) === connection) {
+                    const osCode = error.code;
+                    sendReset(connId, 'connection_error', osCode);
+                    removeConnection(connId, true);
+                    return;
+                }
+                // Replenish the server's send window once the local socket accepted
+                // the bytes, batching updates to roughly half the window.
+                if (connections.get(connId) !== connection)
+                    return;
+                connection.deliveredSinceUpdate += payload.length;
+                if (connection.deliveredSinceUpdate >= Math.ceil(creditWindow / 2)) {
+                    const increment = connection.deliveredSinceUpdate;
+                    connection.deliveredSinceUpdate = 0;
+                    if (!closed && ws.readyState === WebSocket.OPEN) {
+                        sendControl({ type: 'windowUpdate', connId, increment });
+                    }
+                }
+            });
+        };
+        const handleControl = (message) => {
+            switch (message.type) {
+                case 'ready': {
+                    if (tunnelReady)
+                        throw new DestinationTunnelProtocolError('received duplicate READY');
+                    assertDestinationTunnelReady(message);
+                    const expected = destinationTunnelConfigHash(selectors, inspection);
+                    if (message.configHash !== expected) {
+                        throw new DestinationTunnelProtocolError(`server acknowledged config ${message.configHash} but ${expected} was negotiated`);
+                    }
+                    tunnelReady = true;
+                    if (handshakeTimer) {
+                        clearTimeout(handshakeTimer);
+                        handshakeTimer = undefined;
+                    }
+                    armLivenessDeadline();
+                    updateConnectionState('connected');
+                    logger.info(`Destination tunnel ready with ${selectors.length} selector(s)`);
+                    if (inspection.enabled) {
+                        try {
+                            inspectionStream = startDestinationTunnelInspectionStream(remoteURL, message.tunnelId, token, {
+                                ...(options.onInspectionEvent ? { onEvent: options.onInspectionEvent } : {}),
+                                ...(options.onInspectionError ? { onError: options.onInspectionError } : {}),
+                            });
+                        }
+                        catch (error) {
+                            try {
+                                options.onInspectionError?.(error instanceof Error ? error : new Error(String(error)));
+                            }
+                            catch {
+                                // Inspection callbacks are isolated from the main tunnel.
+                            }
+                        }
+                    }
+                    resolve({
+                        tunnelId: message.tunnelId,
+                        selectors: message.selectors,
+                        configHash: message.configHash,
+                        inspection,
+                        ...(inspectionStream ? { inspectionStream } : {}),
+                        close,
+                        getConnectionState,
+                        onConnectionStateChange,
+                    });
+                    return;
+                }
+                case 'error':
+                    throw new Error(`${DESTINATION_TUNNEL_SERVER_ERROR_PREFIX}${message.code}`);
+                case 'open':
+                    if (!tunnelReady)
+                        throw new DestinationTunnelProtocolError('received OPEN before READY');
+                    handleOpen(message);
+                    return;
+                case 'fin':
+                    if (!tunnelReady)
+                        throw new DestinationTunnelProtocolError('received FIN before READY');
+                    handleRemoteFIN(message.connId);
+                    return;
+                case 'windowUpdate':
+                    if (!tunnelReady)
+                        throw new DestinationTunnelProtocolError('received windowUpdate before READY');
+                    handleRemoteWindowUpdate(message.connId, message.increment);
+                    return;
+                case 'reset':
+                    if (!tunnelReady)
+                        throw new DestinationTunnelProtocolError('received RESET before READY');
+                    handleRemoteReset(message.connId);
+            }
+        };
+        const armLivenessDeadline = () => {
+            if (!tunnelReady || closed)
+                return;
+            if (livenessTimer)
+                clearTimeout(livenessTimer);
+            livenessTimer = setTimeout(() => {
+                failTransport(new Error(`destination tunnel received no frames for ${livenessTimeoutMs}ms`));
+            }, livenessTimeoutMs);
+            livenessTimer.unref();
+        };
+        handshakeTimer = setTimeout(() => {
+            failTransport(new Error(`destination tunnel was not ready within ${handshakeTimeoutMs}ms`));
+        }, handshakeTimeoutMs);
+        handshakeTimer.unref();
+        ws.on('open', () => {
+            sendControl({
+                type: 'start',
+                version: DESTINATION_TUNNEL_VERSION,
+                selectors,
+                inspection,
+                window: creditWindow,
+            });
+            pingInterval = setInterval(() => {
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.ping(undefined, true, frameSent);
+                    frameQueued();
+                }
+            }, pingIntervalMs);
+            pingInterval.unref();
+        });
+        ws.on('message', (data, isBinary) => {
+            try {
+                armLivenessDeadline();
+                if (isBinary) {
+                    handleBinary(toBuffer(data));
+                }
+                else {
+                    handleControl(decodeDestinationTunnelServerMessage(JSON.parse(toBuffer(data).toString('utf8'))));
+                }
+            }
+            catch (error) {
+                failTransport(error instanceof Error ? error : new Error(String(error)));
+            }
+        });
+        ws.on('ping', armLivenessDeadline);
+        ws.on('pong', armLivenessDeadline);
+        ws.once('error', (error) => {
+            failTransport(error);
+        });
+        ws.once('close', (code, reason) => {
+            if (closed) {
+                ws.removeAllListeners();
+                return;
+            }
+            failTransport(new Error(`destination tunnel WebSocket closed: ${code}${reason.length ? ` ${reason.toString()}` : ''}`));
+            ws.removeAllListeners();
+        });
+    });
+}
+/**
+ * Whether a resolved domain address may be dialed. Ordinary unicast targets
+ * (including private ranges the user's machine can reach) are allowed;
+ * loopback, link-local, multicast, unspecified, broadcast, and similar
+ * special targets are blocked unless an exact route grants them.
+ */
+function isDialableResolvedAddress(address, port, routes) {
+    for (const route of routes) {
+        if (route.port !== port)
+            continue;
+        if (route.host === address)
+            return true;
+        if (route.host === 'localhost' && (address === '127.0.0.1' || address === '::1'))
+            return true;
+    }
+    const version = net.isIP(address);
+    if (version === 4)
+        return !blockedResolvedAddresses.check(address, 'ipv4');
+    if (version === 6)
+        return !blockedResolvedAddresses.check(address, 'ipv6');
+    return false;
+}
+function classifyOpenFailure(error) {
+    switch (error.code) {
+        case 'ENOTFOUND':
+            return 'dns_not_found';
+        case 'EAI_AGAIN':
+            return 'dns_temporary_failure';
+        case 'ECONNREFUSED':
+            return 'connection_refused';
+        case 'ECONNRESET':
+            return 'connection_reset';
+        case 'ETIMEDOUT':
+            return 'connection_timed_out';
+        case 'ENETUNREACH':
+        case 'EHOSTUNREACH':
+            return 'unreachable';
+        case 'EACCES':
+        case 'EPERM':
+        case 'EPROXYAUTH':
+            return 'permission_denied';
+        case 'EMFILE':
+        case 'ENFILE':
+        case 'ENOBUFS':
+        case 'ENOMEM':
+            return 'resource_exhausted';
+        case 'ECANCELED':
+            return 'cancelled';
+        case 'CERT_HAS_EXPIRED':
+        case 'CERT_NOT_YET_VALID':
+        case 'CERT_REJECTED':
+        case 'CERT_REVOKED':
+        case 'CERT_SIGNATURE_FAILURE':
+        case 'CERT_UNTRUSTED':
+        case 'DEPTH_ZERO_SELF_SIGNED_CERT':
+        case 'ERR_TLS_CERT_ALTNAME_FORMAT':
+        case 'SELF_SIGNED_CERT_IN_CHAIN':
+        case 'HOSTNAME_MISMATCH':
+        case 'INVALID_CA':
+        case 'INVALID_PURPOSE':
+        case 'PATH_LENGTH_EXCEEDED':
+        case 'UNABLE_TO_GET_ISSUER_CERT':
+        case 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY':
+        case 'UNABLE_TO_VERIFY_LEAF_SIGNATURE':
+        case 'ERR_TLS_CERT_ALTNAME_INVALID':
+            return 'tls_validation_failed';
+        case 'EPROTO':
+            return 'tls_protocol_error';
+        default:
+            if (error.code?.startsWith('ERR_SSL_') || error.code?.startsWith('ERR_TLS_')) {
+                return 'tls_handshake_failed';
+            }
+            return 'internal';
+    }
+}
+function positiveInteger(value, name) {
+    if (!Number.isInteger(value) || value <= 0) {
+        throw new Error(`${name} must be a positive integer`);
+    }
+    return value;
+}
+//# sourceMappingURL=destination-tunnel-dialer.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/destination-tunnel-management.mjs
+
+
+
+
+async function destination_tunnel_management_getDestinationTunnelStatus(apiUrl, token) {
+    const response = await nodeProxyTransport.fetch(deriveDestinationTunnelStatusURL(apiUrl).toString(), {
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+        throw new Error(`getTunnelStatus failed: ${response.status} ${await response.text()}`);
+    }
+    return decodeDestinationTunnelStatus(await response.json());
+}
+async function destination_tunnel_management_stopDestinationTunnel(apiUrl, token, tunnelId) {
+    if (!tunnelId.trim()) {
+        throw new Error('tunnelId must not be empty');
+    }
+    const response = await nodeProxyTransport.fetch(deriveDestinationTunnelStopURL(apiUrl, tunnelId).toString(), {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+        throw new Error(`stopTunnel failed: ${response.status} ${await response.text()}`);
+    }
+}
+function decodeDestinationTunnelStatus(value) {
+    const status = readRecord(value, 'tunnel status');
+    const decodedStatus = {};
+    if (status['active'] !== undefined) {
+        decodedStatus.active = readActiveTunnel(status['active']);
+    }
+    if (status['lastFailure'] !== undefined) {
+        decodedStatus.lastFailure = readTunnelFailure(status['lastFailure']);
+    }
+    if (status['lastDialFailure'] !== undefined) {
+        decodedStatus.lastDialFailure = readTunnelDialFailure(status['lastDialFailure']);
+    }
+    return decodedStatus;
+}
+function readActiveTunnel(value) {
+    const active = readRecord(value, 'active tunnel');
+    const state = readString(active, 'state');
+    if (state !== 'starting' && state !== 'ready' && state !== 'stopping') {
+        throw new Error(`invalid tunnel state ${state}`);
+    }
+    return {
+        tunnelId: readNonEmptyString(active, 'tunnelId'),
+        state,
+        selectors: readArray(active, 'selectors').map((selector, index) => destination_tunnel_management_readSelectorReport(selector, `selector-${index + 1}`)),
+        inspection: readInspection(active),
+    };
+}
+function readInspection(active) {
+    const inspection = readRecord(active['inspection'], 'inspection');
+    const enabled = inspection['enabled'];
+    const captureBodies = inspection['captureBodies'];
+    const persist = inspection['persist'];
+    if (typeof enabled !== 'boolean' || typeof captureBodies !== 'boolean' || typeof persist !== 'boolean') {
+        throw new Error('inspection enabled, captureBodies, and persist must be booleans');
+    }
+    const maxBodyBytes = inspection['maxBodyBytes'];
+    const ttlSeconds = inspection['ttlSeconds'];
+    if (typeof maxBodyBytes !== 'number' || typeof ttlSeconds !== 'number') {
+        throw new Error('inspection maxBodyBytes and ttlSeconds must be numbers');
+    }
+    return normalizeDestinationTunnelInspection({
+        enabled,
+        captureBodies,
+        maxBodyBytes,
+        persist,
+        ttlSeconds,
+    });
+}
+function destination_tunnel_management_readSelectorReport(value, expectedId) {
+    const report = readRecord(value, 'tunnel selector');
+    const id = readNonEmptyString(report, 'id');
+    if (id !== expectedId) {
+        throw new Error(`invalid tunnel selector id ${id}`);
+    }
+    const kind = readString(report, 'kind');
+    if (kind !== 'route' && kind !== 'domain') {
+        throw new Error(`invalid tunnel selector kind ${kind}`);
+    }
+    return {
+        id,
+        kind,
+        value: readNonEmptyString(report, 'value'),
+        ...(report['binds'] === undefined ? {} : { binds: readArray(report, 'binds').map(destination_tunnel_management_readBindReport) }),
+    };
+}
+function destination_tunnel_management_readBindReport(value) {
+    const bind = readRecord(value, 'tunnel bind report');
+    const status = readString(bind, 'status');
+    if (status !== 'ok' && status !== 'conflict' && status !== 'error') {
+        throw new Error(`invalid tunnel bind status ${status}`);
+    }
+    const osCode = bind['osCode'];
+    if (osCode !== undefined && typeof osCode !== 'string') {
+        throw new Error('tunnel bind osCode must be a string');
+    }
+    return {
+        address: readNonEmptyString(bind, 'address'),
+        status,
+        ...(osCode === undefined ? {} : { osCode }),
+    };
+}
+function readTunnelFailure(value) {
+    const failure = readRecord(value, 'tunnel failure');
+    return {
+        tunnelId: readNonEmptyString(failure, 'tunnelId'),
+        code: readNonEmptyString(failure, 'code'),
+    };
+}
+function readTunnelDialFailure(value) {
+    const failure = readRecord(value, 'tunnel dial failure');
+    const connectionId = failure['connectionId'];
+    if (typeof connectionId !== 'number' ||
+        !Number.isInteger(connectionId) ||
+        connectionId < 0 ||
+        connectionId > 4294967295) {
+        throw new Error('tunnel dial failure connectionId must be an unsigned 32-bit integer');
+    }
+    const osCode = failure['osCode'];
+    if (osCode !== undefined && typeof osCode !== 'string') {
+        throw new Error('tunnel dial failure osCode must be a string');
+    }
+    return {
+        tunnelId: readNonEmptyString(failure, 'tunnelId'),
+        connectionId,
+        selectorId: readNonEmptyString(failure, 'selectorId'),
+        reason: readNonEmptyString(failure, 'reason'),
+        ...(osCode === undefined ? {} : { osCode }),
+    };
+}
+//# sourceMappingURL=destination-tunnel-management.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/internal/session-stream.mjs
+/**
+ * Long-lived tail of a runtime session SSE stream (live app logs or the
+ * coalesced event log). The runtime replays its buffer on first connect and
+ * tags every entry with a monotonic SSE id; eventsource-client sends
+ * Last-Event-ID on reconnect, so the runtime resumes exactly where the
+ * stream broke and each entry is delivered exactly once.
+ *
+ * Stream health follows the exec client's model (and reuses its policy): the
+ * EventSource reconnects forever on its own, so a dead stream (deleted
+ * instance) would otherwise retry silently for good. Proof of life — a
+ * delivered entry, a keepalive comment, or a clean connection that stays
+ * open healthyConnectionMs — resets the give-up clock; once the stream stays
+ * broken past giveUpAfterMs, onError fires once and the stream closes.
+ */
+
+
+
+
+/** The session stream kept failing past the give-up window; it has been closed. */
+class SessionStreamLostError extends (/* unused pure expression or super */ null && (Error)) {
+}
+/**
+ * Connects to a session SSE endpoint and delivers parsed entries until the
+ * returned function is called (or the stream is given up on). Entries are
+ * one JSON object per SSE data frame; frames that do not parse to an object
+ * with a numeric `ts` are skipped.
+ */
+function session_stream_streamSessionEntries(options) {
+    let closed = false;
+    let connectedAt = 0;
+    let deadSince = 0;
+    let lastCycleAt = 0;
+    let lastCycleMono = 0;
+    let proofOfLifeThisCycle = false;
+    let cleanResponseThisCycle = false;
+    let lastStreamError;
+    const fail = (error) => {
+        if (closed)
+            return;
+        closed = true;
+        eventSource.close();
+        options.onError?.(error);
+    };
+    // Stream health is judged at the fetch surface, where the response status
+    // is visible; the library fires onConnect for error responses too, so an
+    // error page held open must not read as a healthy connection. A rejected
+    // fetch never reaches onDisconnect (the hazard sseFetch exists for):
+    // capture it for the give-up message and let the clock decide, so one
+    // transient refusal does not kill a live stream.
+    const fetchWithStreamPolicy = async (input, init) => {
+        const response = await nodeProxyTransport.fetch(input, init);
+        if (!response.ok) {
+            lastStreamError = new Error(`server answered HTTP ${response.status}`);
+        }
+        cleanResponseThisCycle = response.ok;
+        return response;
+    };
+    const eventSource = createEventSource({
+        url: options.url,
+        fetch: sseFetch(fetchWithStreamPolicy, (err) => {
+            lastStreamError = err instanceof Error ? err : new Error(String(err));
+        }),
+        headers: { Authorization: `Bearer ${options.token}` },
+        onConnect: () => {
+            connectedAt = Date.now();
+        },
+        // Keepalive comments count as proof of life (onMessage never sees them).
+        onComment: () => {
+            proofOfLifeThisCycle = true;
+        },
+        // Fires once per broken cycle, before the retry timer is armed, on both
+        // failure paths (request rejected, stream ended). This is where the
+        // give-up clock runs.
+        onScheduleReconnect: () => {
+            if (closed)
+                return;
+            const now = Date.now();
+            const mono = performance.now();
+            const livedMs = connectedAt > 0 ? now - connectedAt : 0;
+            connectedAt = 0;
+            // Date.now() is wall clock: a laptop waking from sleep (or a clock
+            // step) would arrive with the whole window already "elapsed" and fail
+            // on its first attempt. Sleep is the wall clock advancing while the
+            // monotonic clock stands still; a large drift between the two restarts
+            // the streak.
+            if (deadSince > 0 && lastCycleAt > 0) {
+                const wallGapMs = now - lastCycleAt;
+                const monoGapMs = mono - lastCycleMono;
+                if (wallGapMs - monoGapMs > 30000) {
+                    deadSince = now;
+                }
+            }
+            lastCycleAt = now;
+            lastCycleMono = mono;
+            const healthy = proofOfLifeThisCycle || (cleanResponseThisCycle && livedMs >= sseStreamPolicy.healthyConnectionMs);
+            proofOfLifeThisCycle = false;
+            cleanResponseThisCycle = false;
+            if (healthy) {
+                deadSince = 0;
+                lastStreamError = undefined;
+                return;
+            }
+            if (deadSince === 0) {
+                deadSince = now;
+                return;
+            }
+            if (now - deadSince >= sseStreamPolicy.giveUpAfterMs) {
+                const seconds = Math.round((now - deadSince) / 1000);
+                const cause = lastStreamError ? `; last error: ${lastStreamError.message}` : '';
+                fail(new SessionStreamLostError(`session stream to ${options.url} kept failing for ${seconds}s without delivering entries${cause}; ` +
+                    'the instance may no longer exist'));
+            }
+        },
+        onMessage: (message) => {
+            deadSince = 0;
+            proofOfLifeThisCycle = true;
+            lastStreamError = undefined;
+            const data = typeof message.data === 'string' ? message.data : String(message.data ?? '');
+            let parsed;
+            try {
+                parsed = JSON.parse(data);
+            }
+            catch {
+                return;
+            }
+            if (typeof parsed?.ts !== 'number') {
+                return;
+            }
+            options.onEntry(parsed);
+        },
+    });
+    return () => {
+        if (closed)
+            return;
+        closed = true;
+        eventSource.close();
+    };
+}
+//# sourceMappingURL=session-stream.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/instance-client.mjs
+
+
+
+
+
 
 
 
@@ -90174,6 +92547,15 @@ var RecordingQuality;
     RecordingQuality[RecordingQuality["Q9"] = 9] = "Q9";
     RecordingQuality[RecordingQuality["Q10"] = 10] = "Q10";
 })(RecordingQuality || (RecordingQuality = {}));
+/**
+ * Quotes each token so the remote `sh -c` receives them as literal,
+ * separate arguments — values cannot inject extra shell syntax. Uses
+ * POSIX single-quoting: wrap in single quotes and escape embedded single
+ * quotes as `'\''`.
+ */
+function quoteShellArgs(tokens) {
+    return tokens.map((token) => `'${token.replace(/'/g, `'\\''`)}'`).join(' ');
+}
 /**
  * Creates a client for interacting with a Limbar instance
  * @param options Configuration options including webrtcUrl, token and log level
@@ -90295,6 +92677,11 @@ async function createInstanceClient(options) {
             if ('message' in message && typeof message.message === 'string') {
                 return message.message;
             }
+            // "Flat" results (e.g. cameraControlResult, playOnMicrophoneResult)
+            // carry the error as a plain string instead of a CommandError object.
+            if ('error' in message && typeof message.error === 'string' && message.error) {
+                return message.error;
+            }
             if ('error' in message && message.error && typeof message.error === 'object') {
                 const obj = message.error;
                 if (typeof obj.message === 'string' && obj.message) {
@@ -90326,10 +92713,17 @@ async function createInstanceClient(options) {
                 case 'terminateAppResult':
                 case 'watchAppResult':
                 case 'unwatchAppResult':
+                case 'listAppsResult':
                 case 'playOnMicrophoneResult':
+                case 'cameraControlResult':
+                case 'adbShellResult':
                 case 'setWifiBandwidthResult':
                 case 'startRecordingResult':
                 case 'stopRecordingResult':
+                case 'startAppLogCaptureResult':
+                case 'stopAppLogCaptureResult':
+                case 'startEventCaptureResult':
+                case 'stopEventCaptureResult':
                     return 'id' in message && typeof message.id === 'string';
                 default:
                     return false;
@@ -90563,14 +92957,29 @@ async function createInstanceClient(options) {
                         openUrl,
                         launchApp,
                         terminateApp,
+                        listApps,
                         watchApp,
                         playOnMicrophone,
+                        pushFile,
+                        pullFile,
+                        setCameraVideo,
+                        clearCameraVideo,
+                        adbShell,
                         setWifiBandwidth,
                         startRecording,
                         stopRecording,
+                        startAppLogCapture,
+                        stopAppLogCapture,
+                        startEventCapture,
+                        stopEventCapture,
+                        streamAppLogCapture,
+                        streamEventCapture,
                         keepAlive,
                         disconnect,
                         startAdbTunnel,
+                        startTunnel,
+                        getTunnelStatus,
+                        stopTunnel,
                         sendAsset,
                         syncApp,
                         getConnectionState,
@@ -90582,8 +92991,8 @@ async function createInstanceClient(options) {
         const screenshot = async () => {
             return sendRequest('screenshot', {});
         };
-        const getElementTree = async () => {
-            const result = await sendRequest('getElementTree', {});
+        const getElementTree = async (options) => {
+            const result = await sendRequest('getElementTree', options ?? {}, 30000 + (options?.waitForIdleTimeoutMs ?? 0));
             return {
                 xml: typeof result.xml === 'string' ? result.xml : '',
                 nodes: Array.isArray(result.nodes) ? result.nodes : [],
@@ -90680,6 +93089,10 @@ async function createInstanceClient(options) {
         const terminateApp = async (packageName) => {
             await sendRequest('terminateApp', { packageName });
         };
+        const listApps = async () => {
+            const result = await sendRequest('listApps', {});
+            return result.apps ?? [];
+        };
         const watchApp = async (packageName, onExit) => {
             const { execId } = await withExitCallback('watch', onExit, (execId) => sendRequest('watchApp', { packageName, execId }));
             return {
@@ -90699,6 +93112,66 @@ async function createInstanceClient(options) {
                 ...(microphoneOptions?.once === undefined ? {} : { once: microphoneOptions.once }),
             });
         };
+        const pushFile = async (filePath, destination) => {
+            const uploadUrl = destination === undefined ?
+                `${options.apiUrl}/files`
+                : `${options.apiUrl}/files?path=${encodeURIComponent(destination)}`;
+            const fileStream = fs.createReadStream(filePath);
+            // Node's fetch (undici) supports streaming request bodies but TS DOM types may not include
+            // `duplex` and may not accept Node ReadStreams as BodyInit in some configs.
+            const response = await nodeProxyTransport.fetch(uploadUrl, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/octet-stream',
+                    'Content-Length': fs.statSync(filePath).size.toString(),
+                    Authorization: `Bearer ${options.token}`,
+                },
+                body: fileStream,
+                duplex: 'half',
+            });
+            if (!response.ok) {
+                const errorBody = await response.text();
+                logger.debug(`Upload failed: ${response.status} ${errorBody}`);
+                throw new Error(`Upload failed: ${response.status} ${errorBody}`);
+            }
+            const result = (await response.json());
+            return result.path;
+        };
+        const pullFile = async (remotePath, localPath) => {
+            const downloadUrl = `${options.apiUrl}/files?path=${encodeURIComponent(remotePath)}`;
+            // Streams to disk without buffering the whole file in memory.
+            await downloadFileToLocalPath(downloadUrl, options.token, localPath);
+        };
+        const setCameraVideo = async (filePath, cameraOptions) => {
+            const remotePath = await pushFile(filePath);
+            await sendRequest('cameraControl', {
+                action: 'setSource',
+                source: 'video',
+                arg: remotePath,
+                loop: cameraOptions?.loop ?? true,
+            });
+        };
+        const clearCameraVideo = async () => {
+            await sendRequest('cameraControl', { action: 'reset' });
+        };
+        const adbShell = async (command, args = [], adbOptions) => {
+            if (!command) {
+                throw new Error('command must be a non-empty string');
+            }
+            const commandLine = quoteShellArgs([command, ...args]);
+            const timeoutMs = adbOptions?.timeoutMs;
+            // Wait a little longer than the device-side timeout so the server's own
+            // error surfaces instead of a generic client timeout.
+            const requestTimeoutMs = (timeoutMs ?? 30000) + 15000;
+            const result = await sendRequest('adbShell', { command: commandLine, ...(timeoutMs === undefined ? {} : { timeoutMs }) }, requestTimeoutMs);
+            const encoding = adbOptions?.encoding ?? 'utf8';
+            return {
+                stdout: Buffer.from(result.stdout ?? '', 'base64').toString(encoding),
+                stderr: Buffer.from(result.stderr ?? '', 'base64').toString(encoding),
+                exitCode: typeof result.exitCode === 'number' ? result.exitCode : -1,
+                truncated: result.truncated === true,
+            };
+        };
         const setWifiBandwidth = async (bandwidthOptions) => {
             const request = {};
             if (bandwidthOptions.downKbps !== undefined) {
@@ -90715,7 +93188,9 @@ async function createInstanceClient(options) {
             await sendRequest('setWifiBandwidth', request);
         };
         const startRecording = async (recordingOptions) => {
-            const request = {};
+            const request = {
+                ...persistFields(recordingOptions?.persist),
+            };
             if (recordingOptions?.quality !== undefined) {
                 if (!Number.isInteger(recordingOptions.quality) ||
                     recordingOptions.quality < 5 ||
@@ -90738,6 +93213,36 @@ async function createInstanceClient(options) {
             }
             return downloadUrl;
         };
+        const startAppLogCapture = async (captureOptions) => {
+            if (!captureOptions.bundleId) {
+                throw new Error('bundleId must be a non-empty string');
+            }
+            await sendRequest('startAppLogCapture', {
+                bundleId: captureOptions.bundleId,
+                ...persistFields(captureOptions.persist),
+            });
+        };
+        const stopAppLogCapture = async () => {
+            await sendRequest('stopAppLogCapture', {});
+        };
+        const startEventCapture = async (captureOptions) => {
+            await sendRequest('startEventCapture', { ...persistFields(captureOptions?.persist) });
+        };
+        const stopEventCapture = async () => {
+            await sendRequest('stopEventCapture', {});
+        };
+        const streamAppLogCapture = (handlers) => streamSessionEntries({
+            url: `${options.apiUrl}/session/applogs/events`,
+            token: options.token,
+            onEntry: handlers.onLine,
+            onError: handlers.onError,
+        });
+        const streamEventCapture = (handlers) => streamSessionEntries({
+            url: `${options.apiUrl}/session/events/events`,
+            token: options.token,
+            onEntry: handlers.onEvent,
+            onError: handlers.onError,
+        });
         const keepAlive = () => {
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 return;
@@ -90792,6 +93297,32 @@ async function createInstanceClient(options) {
                 throw err;
             }
             return tunnel;
+        };
+        const requireAdbUrl = () => {
+            if (!options.adbUrl) {
+                throw new Error('adbUrl is required to manage a destination tunnel.');
+            }
+            return options.adbUrl;
+        };
+        const startTunnel = async (tunnelOptions) => {
+            return startDestinationTcpTunnel(deriveDestinationTunnelURL(requireAdbUrl()), options.token, {
+                selectors: tunnelOptions.selectors,
+                inspection: {
+                    enabled: true,
+                    captureBodies: false,
+                    ...(tunnelOptions.inspection ?? {}),
+                },
+                ...(tunnelOptions.onInspectionEvent ? { onInspectionEvent: tunnelOptions.onInspectionEvent } : {}),
+                ...(tunnelOptions.onInspectionError ? { onInspectionError: tunnelOptions.onInspectionError } : {}),
+                ...(tunnelOptions.window === undefined ? {} : { window: tunnelOptions.window }),
+                logLevel: tunnelOptions.logLevel ?? logLevel,
+            });
+        };
+        const getTunnelStatus = async () => {
+            return getDestinationTunnelStatus(requireAdbUrl(), options.token);
+        };
+        const stopTunnel = async (tunnelId) => {
+            await stopDestinationTunnel(requireAdbUrl(), options.token, tunnelId);
         };
         const sendAsset = async (url, timeoutMs) => {
             if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -91797,6 +94328,13 @@ function sendJson(res, statusCode, payload) {
 
 
 
+
+
+
+
+
+
+
 const ACTIVE_RECORDING_FILENAME = 'recording.mp4';
 const REVERSE_TUNNEL_REMOTE_PORT_MIN = 57090;
 const REVERSE_TUNNEL_REMOTE_PORT_MAX = 57099;
@@ -92365,6 +94903,10 @@ async function ios_client_createInstanceClient(options) {
             }),
             startVideoRecordingResult: () => undefined,
             stopVideoRecordingResult: () => undefined,
+            startAppLogCaptureResult: () => undefined,
+            stopAppLogCaptureResult: () => undefined,
+            startEventCaptureResult: () => undefined,
+            stopEventCaptureResult: () => undefined,
             cameraControlResult: () => undefined,
             playOnMicrophoneResult: (msg) => ({
                 duration: msg.duration ?? 0,
@@ -92543,6 +95085,12 @@ async function ios_client_createInstanceClient(options) {
                         performActions,
                         startRecording,
                         stopRecording,
+                        startAppLogCapture,
+                        stopAppLogCapture,
+                        startEventCapture,
+                        stopEventCapture,
+                        streamAppLogCapture,
+                        streamEventCapture,
                         playOnMicrophone,
                         stopMicrophonePlayback,
                         microphoneStatus,
@@ -92553,6 +95101,9 @@ async function ios_client_createInstanceClient(options) {
                         discoverStoreKitConfig,
                         softReset,
                         startReverseTunnel,
+                        startTunnel,
+                        getTunnelStatus,
+                        stopTunnel,
                         startHttpProxy,
                         startForwardHttpProxy,
                         disconnect,
@@ -92564,6 +95115,7 @@ async function ios_client_createInstanceClient(options) {
                         xcodebuild,
                         pushFile,
                         pullFile,
+                        listFiles,
                         deleteFile,
                         setCameraVideo,
                         clearCameraVideo,
@@ -92604,8 +95156,69 @@ async function ios_client_createInstanceClient(options) {
         const tapWithScreenSize = (x, y, screenWidth, screenHeight) => {
             return sendRequest('tap', { x, y, screenWidth, screenHeight });
         };
-        const tapElement = (selector, options) => {
+        const tapElementOnce = (selector, options) => {
             return sendRequest('tapElement', { selector, activate: options?.activate }, undefined, options?.timeoutMs ?? TAP_ELEMENT_TIMEOUT_MS);
+        };
+        // The server fails absent selectors fast with a typed error whose phrase
+        // the e2e suite pins. The other two phrases are pre-fail-fast servers:
+        // their touch path reports a miss after its own sweep ("was not found on
+        // screen"), and their ax path reports "not found for selector".
+        const isAbsentSelectorError = (error) => {
+            const message = error instanceof Error ? error.message : String(error);
+            return /matched nothing in the accessibility tree|was not found on screen after scrolling|Accessibility element not found for selector/.test(message);
+        };
+        const tapElement = async (selector, options) => {
+            if (!options?.scrollSearch) {
+                return tapElementOnce(selector, options);
+            }
+            // Client-side scroll search: page down, then back up past the start,
+            // retrying per page. Each attempt costs one server tree read; the
+            // budget and cancellation live here, not on the server. timeoutMs is
+            // the TOTAL budget for the search; each attempt gets what remains.
+            // Mirrors the server's in-tree scroll-into-view paging scheme
+            // (limsimulator+interaction.swift scrollScanForMatch: 3 down/6 up,
+            // 0.6 page, 0.85/0.15 drag start); tune both together.
+            if (!cachedDeviceInfo) {
+                throw new Error('Device info not available yet; wait for client connection to be established.');
+            }
+            const deadline = Date.now() + (options.timeoutMs ?? TAP_ELEMENT_TIMEOUT_MS);
+            const attempt = () => tapElementOnce(selector, { ...options, timeoutMs: Math.max(1, deadline - Date.now()) });
+            let lastError;
+            try {
+                return await attempt();
+            }
+            catch (error) {
+                if (!isAbsentSelectorError(error))
+                    throw error;
+                lastError = error;
+            }
+            // No coordinate: deviceInfo reports portrait dimensions only, so an
+            // anchored drag lands in the wrong place in landscape. The server
+            // starts center-screen in rotated space, which halves the effective
+            // page but stays correct in every orientation.
+            const pagePixels = Math.round(cachedDeviceInfo.screenHeight * 0.6);
+            for (const [direction, count] of [
+                ['down', 3],
+                ['up', 6],
+            ]) {
+                for (let page = 0; page < count; page += 1) {
+                    if (Date.now() >= deadline)
+                        break;
+                    await scroll(direction, pagePixels);
+                    // Let lazily-materializing cells appear before re-reading.
+                    await sleep(300);
+                    try {
+                        return await attempt();
+                    }
+                    catch (error) {
+                        if (!isAbsentSelectorError(error))
+                            throw error;
+                        lastError = error;
+                    }
+                }
+            }
+            const message = lastError instanceof Error ? lastError.message : String(lastError);
+            throw new Error(`${message} (after client-side scroll search)`);
         };
         const incrementElement = (selector) => {
             return sendRequest('incrementElement', { selector });
@@ -92624,8 +95237,10 @@ async function ios_client_createInstanceClient(options) {
                 focused: target ? undefined : true,
             });
         };
-        const typeText = (text, pressEnter) => {
-            return sendRequest('typeText', { text, pressEnter });
+        const typeText = (text, pressEnter, options) => {
+            // Sent only when false so legacy payloads stay byte-identical.
+            const requireFocus = options?.requireFocus === false ? false : undefined;
+            return sendRequest('typeText', { text, pressEnter, requireFocus });
         };
         const pressKey = (key, modifiers) => {
             return sendRequest('pressKey', { key, modifiers });
@@ -92736,7 +95351,9 @@ async function ios_client_createInstanceClient(options) {
             return sendRequest('performActions', { actions }, undefined, timeoutMs);
         };
         const startRecording = async (opts) => {
-            const request = {};
+            const request = {
+                ...persistFields(opts?.persist),
+            };
             if (opts?.quality !== undefined) {
                 if (!Number.isInteger(opts.quality) || opts.quality < 5 || opts.quality > 10) {
                     throw new Error('quality must be one of: 5, 6, 7, 8, 9, 10');
@@ -92745,6 +95362,36 @@ async function ios_client_createInstanceClient(options) {
             }
             await sendRequest('startVideoRecording', request);
         };
+        const startAppLogCapture = async (opts) => {
+            if (!opts.bundleId) {
+                throw new Error('bundleId must be a non-empty string');
+            }
+            await sendRequest('startAppLogCapture', {
+                bundleId: opts.bundleId,
+                ...persistFields(opts.persist),
+            });
+        };
+        const stopAppLogCapture = async () => {
+            await sendRequest('stopAppLogCapture');
+        };
+        const startEventCapture = async (opts) => {
+            await sendRequest('startEventCapture', { ...persistFields(opts?.persist) });
+        };
+        const stopEventCapture = async () => {
+            await sendRequest('stopEventCapture');
+        };
+        const streamAppLogCapture = (handlers) => streamSessionEntries({
+            url: `${options.apiUrl}/session/applogs/events`,
+            token: options.token,
+            onEntry: handlers.onLine,
+            onError: handlers.onError,
+        });
+        const streamEventCapture = (handlers) => streamSessionEntries({
+            url: `${options.apiUrl}/session/events/events`,
+            token: options.token,
+            onEntry: handlers.onEvent,
+            onError: handlers.onError,
+        });
         const stopRecording = async (saveTo) => {
             await sendRequest('stopVideoRecording', {
                 upload: saveTo.presignedUrl ? { presignedUrl: saveTo.presignedUrl } : undefined,
@@ -92973,6 +95620,32 @@ async function ios_client_createInstanceClient(options) {
             }
             return Buffer.from(await response.arrayBuffer());
         };
+        const listFiles = async (path = '.', opts) => {
+            const params = new URLSearchParams();
+            if (path && path !== '.') {
+                params.set('path', path);
+            }
+            if (opts?.bundleId) {
+                params.set('bundleId', opts.bundleId);
+                if (opts.containerType) {
+                    params.set('containerType', opts.containerType);
+                }
+            }
+            const query = params.toString();
+            const url = `${options.apiUrl}/files/list${query ? `?${query}` : ''}`;
+            const response = await nodeProxyTransport.fetch(url, {
+                method: 'GET',
+                headers: {
+                    Authorization: `Bearer ${options.token}`,
+                },
+            });
+            if (!response.ok) {
+                const errorBody = await response.text();
+                throw new Error(`Listing of '${path}' failed: ${response.status} ${errorBody}`);
+            }
+            const result = (await response.json());
+            return result.entries;
+        };
         const deleteFile = async (name, opts) => {
             const response = await nodeProxyTransport.fetch(buildFilesUrl(name, opts), {
                 method: 'DELETE',
@@ -93105,6 +95778,19 @@ async function ios_client_createInstanceClient(options) {
                 logLevel: tunnelOptions.logLevel ?? logLevel,
             });
         };
+        const startTunnel = async (tunnelOptions) => {
+            return startDestinationTcpTunnel(deriveDestinationTunnelURL(options.apiUrl), options.token, {
+                selectors: tunnelOptions.selectors,
+                inspection: disabledDestinationTunnelInspection(),
+                logLevel: tunnelOptions.logLevel ?? logLevel,
+            });
+        };
+        const getTunnelStatus = async () => {
+            return getDestinationTunnelStatus(options.apiUrl, options.token);
+        };
+        const stopTunnel = async (tunnelId) => {
+            await stopDestinationTunnel(options.apiUrl, options.token, tunnelId);
+        };
         const startHttpProxy = async (proxyOptions) => {
             assertPort(proxyOptions.localPort, 'localPort', 1, 65535);
             const proxy = await startLocalHttpProxy({
@@ -93150,6 +95836,167 @@ async function ios_client_createInstanceClient(options) {
     });
 }
 //# sourceMappingURL=ios-client.mjs.map
+;// CONCATENATED MODULE: ./node_modules/@limrun/api/destination-tunnel-har.mjs
+
+/**
+ * Correlates filesystem-neutral inspection body chunks with completion
+ * metadata and returns self-contained HAR entries.
+ */
+class DestinationTunnelHARAssembler {
+    constructor(bodyLimit = DESTINATION_TUNNEL_DEFAULT_MAX_BODY_BYTES) {
+        this.bodyLimit = bodyLimit;
+        this.pending = new Map();
+        if (!Number.isInteger(bodyLimit) || bodyLimit < 1) {
+            throw new Error('HAR body limit must be a positive integer');
+        }
+    }
+    add(event) {
+        if (event.type === 'body') {
+            const state = this.stateFor(event.requestId);
+            const response = event.direction === 'response';
+            const bytes = response ? state.responseBytes : state.requestBytes;
+            const take = Math.min(event.body.byteLength, Math.max(0, this.bodyLimit - bytes));
+            if (take > 0) {
+                (response ? state.responseBody : state.requestBody).push(event.body.slice(0, take));
+            }
+            if (response) {
+                state.responseBytes += take;
+                state.responseTruncated || (state.responseTruncated = take < event.body.byteLength);
+            }
+            else {
+                state.requestBytes += take;
+                state.requestTruncated || (state.requestTruncated = take < event.body.byteLength);
+            }
+            return undefined;
+        }
+        if (event.type !== 'complete')
+            return undefined;
+        const state = this.stateFor(event.requestId);
+        try {
+            return makeDestinationTunnelHAREntry(event.data, state);
+        }
+        finally {
+            this.pending.delete(event.requestId);
+        }
+    }
+    reset() {
+        this.pending.clear();
+    }
+    stateFor(requestId) {
+        let state = this.pending.get(requestId);
+        if (!state) {
+            state = {
+                requestBody: [],
+                requestBytes: 0,
+                requestTruncated: false,
+                responseBody: [],
+                responseBytes: 0,
+                responseTruncated: false,
+            };
+            this.pending.set(requestId, state);
+        }
+        return state;
+    }
+}
+function makeDestinationTunnelHAREntry(complete, capture) {
+    const requestBody = concatBytes(capture.requestBody, capture.requestBytes);
+    const responseBody = concatBytes(capture.responseBody, capture.responseBytes);
+    const { request, encoding: requestBodyEncoding } = addRequestBody(complete.request, requestBody);
+    const response = addResponseBody(complete.response, responseBody);
+    return {
+        ...(complete.pageref === undefined ? {} : { pageref: complete.pageref }),
+        startedDateTime: complete.startedDateTime,
+        time: complete.time,
+        request,
+        response,
+        cache: complete.cache,
+        timings: complete.timings,
+        ...(complete.serverIPAddress === undefined ? {} : { serverIPAddress: complete.serverIPAddress }),
+        ...(complete.connection === undefined ? {} : { connection: complete.connection }),
+        ...(complete.comment === undefined ? {} : { comment: complete.comment }),
+        _limrun: {
+            ...complete._limrun,
+            ...(requestBodyEncoding ? { requestBodyEncoding } : {}),
+            requestBodyTruncated: complete._limrun.requestBodyTruncated === true || capture.requestTruncated,
+            responseBodyTruncated: complete._limrun.responseBodyTruncated === true || capture.responseTruncated,
+        },
+    };
+}
+function addRequestBody(request, body) {
+    if (body.byteLength === 0)
+        return { request };
+    const mimeType = request.postData?.mimeType ?? headerValue(request.headers, 'content-type');
+    const encoded = encodedBody(body, mimeType);
+    return {
+        request: {
+            ...request,
+            postData: {
+                mimeType: mimeType ?? '',
+                text: encoded.text,
+            },
+        },
+        ...(encoded.encoding ? { encoding: encoded.encoding } : {}),
+    };
+}
+function addResponseBody(response, body) {
+    if (body.byteLength === 0)
+        return response;
+    const content = { ...response.content };
+    delete content.text;
+    delete content.encoding;
+    return {
+        ...response,
+        content: {
+            ...content,
+            ...encodedBody(body, response.content.mimeType),
+        },
+    };
+}
+function encodedBody(body, contentType) {
+    if (isTextualContentType(contentType)) {
+        return { text: new TextDecoder().decode(body) };
+    }
+    return { text: bytesToBase64(body), encoding: 'base64' };
+}
+function isTextualContentType(contentType) {
+    const mimeType = contentType?.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+    return (mimeType.startsWith('text/') ||
+        mimeType.endsWith('+json') ||
+        mimeType.endsWith('+xml') ||
+        mimeType === 'application/json' ||
+        mimeType === 'application/xml' ||
+        mimeType === 'application/javascript' ||
+        mimeType === 'application/x-javascript' ||
+        mimeType === 'application/x-www-form-urlencoded' ||
+        mimeType === 'application/graphql');
+}
+function headerValue(headers, name) {
+    return headers.find((header) => header.name.toLowerCase() === name)?.value;
+}
+function concatBytes(chunks, length) {
+    const result = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.byteLength;
+    }
+    return result;
+}
+function bytesToBase64(bytes) {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let result = '';
+    for (let index = 0; index < bytes.length; index += 3) {
+        const first = bytes[index];
+        const second = bytes[index + 1];
+        const third = bytes[index + 2];
+        result += alphabet[first >> 2];
+        result += alphabet[((first & 3) << 4) | ((second ?? 0) >> 4)];
+        result += second === undefined ? '=' : alphabet[((second & 15) << 2) | ((third ?? 0) >> 6)];
+        result += third === undefined ? '=' : alphabet[third & 63];
+    }
+    return result;
+}
+//# sourceMappingURL=destination-tunnel-har.mjs.map
 ;// CONCATENATED MODULE: ./node_modules/@limrun/api/ios-maestro.mjs
 
 
@@ -93676,6 +96523,12 @@ function writeRbeWorkspaceFiles(workspaceDir, xcodeVersionKey, port, isMacClient
 
 
 
+
+
+
+
+
+
 //# sourceMappingURL=index.mjs.map
 ;// CONCATENATED MODULE: ./src/comment.ts
 
@@ -93765,6 +96618,16 @@ function getXcodeProjectConfig() {
         scheme: getOptionalInput("scheme"),
         sdk: getInput("sdk"),
     };
+}
+/** The Xcode major to build with, or undefined for the sandbox default. */
+function getXcodeVersion() {
+    const value = getInput("xcode-version").trim();
+    if (!value)
+        return undefined;
+    if (!/^\d+$/.test(value)) {
+        throw new Error(`xcode-version must be an Xcode major such as 27, got "${value}"`);
+    }
+    return value;
 }
 function getPreviewModel() {
     const model = (getInput("model") || "iphone").trim().toLowerCase();
@@ -93971,6 +96834,7 @@ async function runMain() {
         return;
     }
     const previewModel = getPreviewModel();
+    const xcodeVersion = getXcodeVersion();
     const buildSettings = getBuildSettings();
     if (!(0,external_fs_.existsSync)(projectPath)) {
         setFailed(`project-path "${projectPath}" does not exist.`);
@@ -94027,6 +96891,14 @@ async function runMain() {
         });
         info(`Xcode instance ready: ${xcodeInstance.metadata.id}`);
         const xcode = await client.xcodeInstances.createClient({ instance: xcodeInstance });
+        if (xcodeVersion) {
+            const { bound } = await xcode.getXcode();
+            if (bound.major !== xcodeVersion) {
+                info(`Switching sandbox to Xcode ${xcodeVersion} (DerivedData reset)...`);
+                const { bound: now } = await xcode.setXcode(xcodeVersion);
+                info(`Sandbox now uses Xcode ${now.version} (${now.build})`);
+            }
+        }
         if (resolvedBazelTarget) {
             await buildWithBazel(xcode, workspaceRoot, resolvedBazelTarget, assetName);
         }
