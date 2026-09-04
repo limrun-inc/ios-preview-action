@@ -96892,11 +96892,10 @@ async function runMain() {
         info(`Xcode instance ready: ${xcodeInstance.metadata.id}`);
         const xcode = await client.xcodeInstances.createClient({ instance: xcodeInstance });
         if (xcodeVersion) {
-            const { bound } = await xcode.getXcode();
-            if (bound.major !== xcodeVersion) {
-                info(`Switching sandbox to Xcode ${xcodeVersion} (DerivedData reset)...`);
-                const { bound: now } = await xcode.setXcode(xcodeVersion);
-                info(`Sandbox now uses Xcode ${now.version} (${now.build})`);
+            // One round trip: the daemon answers alreadyBound for a no-op, before any busy check.
+            const result = await xcode.setXcode(xcodeVersion);
+            if (!result.alreadyBound) {
+                info(`Sandbox now uses Xcode ${result.bound.version} (${result.bound.build}); DerivedData was reset.`);
             }
         }
         if (resolvedBazelTarget) {
