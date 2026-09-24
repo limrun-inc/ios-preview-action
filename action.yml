@@ -41,11 +41,15 @@ inputs:
     description: 'Limrun API key (store as a repository secret)'
     required: true
   github-token:
-    description: 'GitHub token for posting PR comments and attaching media'
+    description: 'GitHub token for posting PR comments'
     required: false
     default: ${{ github.token }}
   media:
-    description: 'Newline-delimited image or video paths to attach inline to the pull request body. Requires gh v2.99.0 or newer on the runner. Add #alt text after image paths when the pull request body does not already reference them.'
+    description: 'Newline-delimited image or video paths to show in the pull request body. Add #alt text after an image path. Requires media-token and gh v2.99.0 or newer on the runner.'
+    required: false
+    default: ''
+  media-token:
+    description: 'User token (personal access token or OAuth) with write access to the repository, used only to upload media. GitHub rejects github.token for attachments.'
     required: false
     default: ''
 outputs:

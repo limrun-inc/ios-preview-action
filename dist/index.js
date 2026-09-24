@@ -96596,7 +96596,103 @@ async function updateCommentClosed(token, owner, repo, prNumber, platform) {
     }
 }
 
+;// CONCATENATED MODULE: ./src/media.ts
+
+
+
+
+
+
+// The action owns the body section between these markers and rewrites it on
+// every run, so a new push replaces the media instead of appending a copy.
+const blockStart = "<!-- limrun-preview-media -->";
+const blockEnd = "<!-- /limrun-preview-media -->";
+// Splits `path#alt text` the way gh does, so the embed names the same file gh
+// uploads: the longest prefix that exists wins, since `#` is legal in filenames.
+function parseAttachment(attachment) {
+    if ((0,external_fs_.existsSync)(attachment)) {
+        return { path: attachment, alt: "" };
+    }
+    for (let i = attachment.lastIndexOf("#"); i > 0; i = attachment.lastIndexOf("#", i - 1)) {
+        if ((0,external_fs_.existsSync)(attachment.slice(0, i))) {
+            return { path: attachment.slice(0, i), alt: attachment.slice(i + 1) };
+        }
+    }
+    const i = attachment.lastIndexOf("#");
+    return i > 0
+        ? { path: attachment.slice(0, i), alt: attachment.slice(i + 1) }
+        : { path: attachment, alt: "" };
+}
+// One embed per paragraph. gh swaps each local path for its uploaded URL, and
+// a video embed that stands alone becomes a bare URL, which renders as a player.
+function buildBlock(attachments) {
+    const embeds = attachments.map((attachment) => {
+        const { path, alt } = parseAttachment(attachment);
+        const label = (alt || (0,external_path_namespaceObject.basename)(path)).replace(/[\\[\]]/g, "\\$&");
+        return `![${label}](<${path}>)`;
+    });
+    return [blockStart, ...embeds, blockEnd].join("\n\n");
+}
+function withMediaBlock(body, attachments) {
+    const block = buildBlock(attachments);
+    const start = body.indexOf(blockStart);
+    const end = body.indexOf(blockEnd, start);
+    if (start !== -1 && end !== -1) {
+        return body.slice(0, start) + block + body.slice(end + blockEnd.length);
+    }
+    return body.trim() ? `${body.trimEnd()}\n\n${block}\n` : `${block}\n`;
+}
+async function attachMediaToPullRequest(token, owner, repo, prNumber, attachments) {
+    const octokit = getOctokit(token);
+    const { data: pr } = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber });
+    const dir = (0,external_fs_.mkdtempSync)((0,external_path_namespaceObject.join)((0,external_os_namespaceObject.tmpdir)(), "limrun-media-"));
+    const bodyFile = (0,external_path_namespaceObject.join)(dir, "body.md");
+    (0,external_fs_.writeFileSync)(bodyFile, withMediaBlock(pr.body ?? "", attachments));
+    const args = [
+        "pr",
+        "edit",
+        String(prNumber),
+        "--repo",
+        `${owner}/${repo}`,
+        "--body-file",
+        bodyFile,
+        ...attachments.flatMap((attachment) => ["--attach", attachment]),
+    ];
+    info(`Attaching ${attachments.length} media file(s) to the pull request body...`);
+    try {
+        await new Promise((resolvePromise, reject) => {
+            const child = (0,external_child_process_namespaceObject.spawn)("gh", args, {
+                env: { ...process.env, GH_TOKEN: token },
+                stdio: ["ignore", "pipe", "pipe"],
+            });
+            let stderr = "";
+            child.stdout.on("data", (chunk) => info(chunk.toString().trimEnd()));
+            child.stderr.on("data", (chunk) => (stderr += chunk.toString()));
+            child.on("error", (err) => {
+                reject(err.code === "ENOENT"
+                    ? new Error("gh v2.99.0 or newer is required when the media input is set.")
+                    : err);
+            });
+            child.on("close", (code, signal) => {
+                if (code === 0) {
+                    resolvePromise();
+                }
+                else if (signal) {
+                    reject(new Error(`gh pr edit was killed by ${signal}`));
+                }
+                else {
+                    reject(new Error(`gh pr edit failed with exit code ${code}: ${stderr.trim()}`));
+                }
+            });
+        });
+    }
+    finally {
+        (0,external_fs_.rmSync)(dir, { recursive: true, force: true });
+    }
+}
+
 ;// CONCATENATED MODULE: ./src/index.ts
+
 
 
 
@@ -96749,41 +96845,6 @@ function runBazelisk(args, cwd) {
         });
     });
 }
-function attachMediaToPullRequest(token, owner, repo, prNumber, attachments) {
-    const args = [
-        "pr",
-        "edit",
-        String(prNumber),
-        "--repo",
-        `${owner}/${repo}`,
-        ...attachments.flatMap((attachment) => ["--attach", attachment]),
-    ];
-    return new Promise((resolvePromise, reject) => {
-        info(`Attaching ${attachments.length} media file(s) to the pull request body...`);
-        const child = (0,external_child_process_namespaceObject.spawn)("gh", args, {
-            env: { ...process.env, GH_TOKEN: token },
-            stdio: ["ignore", "pipe", "pipe"],
-        });
-        child.stdout.on("data", (chunk) => logChunk(chunk.toString(), info));
-        child.stderr.on("data", (chunk) => logChunk(chunk.toString(), warning));
-        child.on("error", (err) => {
-            reject(err.code === "ENOENT"
-                ? new Error("gh v2.99.0 or newer is required when the media input is set.")
-                : err);
-        });
-        child.on("close", (code, signal) => {
-            if (code === 0) {
-                resolvePromise();
-            }
-            else if (signal) {
-                reject(new Error(`gh pr edit was killed by ${signal}`));
-            }
-            else {
-                reject(new Error(`gh pr edit failed with exit code ${code}. The media input requires gh v2.99.0 or newer.`));
-            }
-        });
-    });
-}
 async function buildWithBazel(xcode, workspaceRoot, target, assetName) {
     info("Starting remote build execution...");
     const initial = await retryTransient(() => xcode.startRbe(), { log: info });
@@ -96832,6 +96893,10 @@ async function runMain() {
     const client = new Limrun({ apiKey });
     const projectPath = getInput("project-path") || ".";
     const mediaAttachments = getMediaAttachments();
+    const mediaToken = getInput("media-token");
+    if (mediaToken) {
+        core_setSecret(mediaToken);
+    }
     const { payload } = github_context;
     const pr = payload.pull_request;
     if (!pr) {
@@ -96876,6 +96941,16 @@ async function runMain() {
     }
     if (!["opened", "synchronize", "reopened", "labeled"].includes(action)) {
         info(`Ignoring PR action "${action}", nothing to do.`);
+        return;
+    }
+    // GitHub accepts attachment uploads only from user tokens, so fail before the
+    // build instead of after it.
+    if (mediaAttachments.length > 0 && !mediaToken) {
+        setFailed("media-token is required when the media input is set.");
+        return;
+    }
+    if (mediaToken.startsWith("ghs_")) {
+        setFailed("media-token must be a user token (personal access token or OAuth); GitHub rejects app installation tokens such as github.token for attachments.");
         return;
     }
     const previewModel = getPreviewModel();
@@ -96983,10 +97058,7 @@ async function runMain() {
         warning("github-token not available, skipping PR comment.");
     }
     if (mediaAttachments.length > 0) {
-        if (!ghToken) {
-            throw new Error("github-token is required when the media input is set.");
-        }
-        await attachMediaToPullRequest(ghToken, owner, repo, prNumber, mediaAttachments);
+        await attachMediaToPullRequest(mediaToken, owner, repo, prNumber, mediaAttachments);
         info("PR media attached.");
     }
 }
