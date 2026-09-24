@@ -13,6 +13,7 @@ import { spawn } from "child_process";
 import { existsSync, statSync } from "fs";
 import { join, resolve } from "path";
 import { postOrUpdateComment, updateCommentClosed } from "./comment";
+import { attachMediaToPullRequest } from "./media";
 
 const IS_POST_RUN_STATE = "is-post-run";
 const CLEANUP_LABEL_SELECTOR_STATE = "cleanup-label-selector";
@@ -180,53 +181,6 @@ function runBazelisk(args: string[], cwd: string): Promise<void> {
   });
 }
 
-function attachMediaToPullRequest(
-  token: string,
-  owner: string,
-  repo: string,
-  prNumber: number,
-  attachments: string[]
-): Promise<void> {
-  const args = [
-    "pr",
-    "edit",
-    String(prNumber),
-    "--repo",
-    `${owner}/${repo}`,
-    ...attachments.flatMap((attachment) => ["--attach", attachment]),
-  ];
-
-  return new Promise((resolvePromise, reject) => {
-    core.info(`Attaching ${attachments.length} media file(s) to the pull request body...`);
-    const child = spawn("gh", args, {
-      env: { ...process.env, GH_TOKEN: token },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    child.stdout.on("data", (chunk) => logChunk(chunk.toString(), core.info));
-    child.stderr.on("data", (chunk) => logChunk(chunk.toString(), core.warning));
-    child.on("error", (err: NodeJS.ErrnoException) => {
-      reject(
-        err.code === "ENOENT"
-          ? new Error("gh v2.99.0 or newer is required when the media input is set.")
-          : err
-      );
-    });
-    child.on("close", (code, signal) => {
-      if (code === 0) {
-        resolvePromise();
-      } else if (signal) {
-        reject(new Error(`gh pr edit was killed by ${signal}`));
-      } else {
-        reject(
-          new Error(
-            `gh pr edit failed with exit code ${code}. The media input requires gh v2.99.0 or newer.`
-          )
-        );
-      }
-    });
-  });
-}
-
 async function buildWithBazel(
   xcode: XcodeClient,
   workspaceRoot: string,
@@ -284,6 +238,10 @@ async function runMain(): Promise<void> {
   const client = new Limrun({ apiKey });
   const projectPath = core.getInput("project-path") || ".";
   const mediaAttachments = getMediaAttachments();
+  const mediaToken = core.getInput("media-token");
+  if (mediaToken) {
+    core.setSecret(mediaToken);
+  }
 
   const { payload } = github.context;
   const pr = payload.pull_request;
@@ -331,6 +289,19 @@ async function runMain(): Promise<void> {
 
   if (!["opened", "synchronize", "reopened", "labeled"].includes(action as string)) {
     core.info(`Ignoring PR action "${action}", nothing to do.`);
+    return;
+  }
+
+  // GitHub accepts attachment uploads only from user tokens, so fail before the
+  // build instead of after it.
+  if (mediaAttachments.length > 0 && !mediaToken) {
+    core.setFailed("media-token is required when the media input is set.");
+    return;
+  }
+  if (mediaToken.startsWith("ghs_")) {
+    core.setFailed(
+      "media-token must be a user token (personal access token or OAuth); GitHub rejects app installation tokens such as github.token for attachments."
+    );
     return;
   }
 
@@ -453,10 +424,7 @@ async function runMain(): Promise<void> {
   }
 
   if (mediaAttachments.length > 0) {
-    if (!ghToken) {
-      throw new Error("github-token is required when the media input is set.");
-    }
-    await attachMediaToPullRequest(ghToken, owner, repo, prNumber, mediaAttachments);
+    await attachMediaToPullRequest(mediaToken, owner, repo, prNumber, mediaAttachments);
     core.info("PR media attached.");
   }
 }

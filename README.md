@@ -44,7 +44,7 @@ with:
 
 ## Images and videos in the pull request
 
-The action can upload images and videos produced by earlier workflow steps into
+The action can show images and videos produced by earlier workflow steps in
 the pull request body:
 
 ```yaml
@@ -53,29 +53,36 @@ the pull request body:
   with:
     project-path: .
     api-key: ${{ secrets.LIM_API_KEY }}
+    media-token: ${{ secrets.MEDIA_TOKEN }}
     media: |
       ./artifacts/home.png#The app home screen
       ./artifacts/walkthrough.mp4
 ```
 
+GitHub accepts attachment uploads only from user tokens, so `media-token` must
+be a personal access token or OAuth token of a user with write access to the
+repository. `github.token` does not work. Pull requests from forks get no
+secrets, so the step fails there when `media` is set.
+
 The runner must have GitHub CLI v2.99.0 or newer. The `media` input accepts one
 local path per line and supports PNG, JPEG, GIF, WebP, SVG, MP4, MOV, and WebM.
 Images use the text after `#` as alt text.
 
-By default, media is appended to the existing body. To place it in a specific
-section, reference the same local path in the body before the action runs:
+The action keeps the media in its own section of the body, between
+`<!-- limrun-preview-media -->` and `<!-- /limrun-preview-media -->`, and
+replaces that section on every run, so a new push swaps the media instead of
+adding another copy. By default the section is appended to the body. To place
+it elsewhere, put both markers where you want it, for example in your pull
+request template:
 
 ```markdown
 ## Preview
 
-![The app home screen](./artifacts/home.png)
-
-![Walkthrough](./artifacts/walkthrough.mp4)
+<!-- limrun-preview-media -->
+<!-- /limrun-preview-media -->
 ```
 
-GitHub CLI rewrites those paths to uploaded assets. Keep a video embed alone in
-its paragraph so GitHub renders it as an inline player. The action never
-overwrites other pull request body content.
+The action never changes body content outside that section.
 
 ## Bazel projects
 
@@ -123,8 +130,9 @@ concurrency:
 | `xcode-version` | No | sandbox default | Xcode major to build with, e.g. `27` (the CI equivalent of `lim xcode version set`). Switches the sandbox when it has another major selected (the other version's build cache is invalidated, so the next build starts cold). |
 | `build-settings` | No | | Newline-delimited `KEY=VALUE` Xcode build settings for the preview build. Allowlisted safe settings (currently `SWIFT_ACTIVE_COMPILATION_CONDITIONS`) plus any `APP_CONFIG_*` key. |
 | `api-key` | Yes | | Limrun API key. Pass as a secret: `${{ secrets.LIM_API_KEY }}` |
-| `github-token` | No | `${{ github.token }}` | GitHub token for posting PR comments and attaching media. |
-| `media` | No | | Newline-delimited image or video paths to attach to the pull request body. Images may include `#alt text`. |
+| `github-token` | No | `${{ github.token }}` | GitHub token for posting PR comments |
+| `media` | No | | Newline-delimited image or video paths to show in the pull request body. Images may include `#alt text`. |
+| `media-token` | With `media` | | User token with write access to the repository, used only to upload media. `github.token` does not work. |
 
 ## Build-time build settings
 
@@ -167,7 +175,4 @@ Pass sensitive `APP_CONFIG_*` values via `${{ secrets.* }}` (e.g. `APP_CONFIG_DE
 
 ## Permissions
 
-The workflow needs `pull-requests: write` to post PR comments. Media uploads also
-require repository write access. Without comment permission, the action uploads
-the preview asset but skips the comment with a warning; an explicitly configured
-media upload fails if GitHub rejects it.
+The workflow needs `pull-requests: write` to post PR comments. Without this, the action uploads the asset but skips the comment with a warning. Media uploads use `media-token`, not the workflow permissions, and the step fails if GitHub rejects them.
