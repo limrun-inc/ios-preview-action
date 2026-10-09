@@ -97182,7 +97182,26 @@ async function attachMediaToPullRequest(token, owner, repo, prNumber, attachment
     }
 }
 
+;// CONCATENATED MODULE: ./src/preview-url.ts
+function buildPreviewUrl(consoleUrl, assetName, model, options = {}) {
+    const baseUrl = consoleUrl.endsWith("/") ? consoleUrl : `${consoleUrl}/`;
+    const url = new URL("preview", baseUrl);
+    url.searchParams.set("asset", assetName);
+    url.searchParams.set("platform", "ios");
+    url.searchParams.set("model", model);
+    for (const entry of (options.env ?? "").split(/\r?\n/)) {
+        if (entry.trim()) {
+            url.searchParams.append("env", entry);
+        }
+    }
+    if (options.openUrl) {
+        url.searchParams.set("openUrl", options.openUrl);
+    }
+    return url.toString();
+}
+
 ;// CONCATENATED MODULE: ./src/index.ts
+
 
 
 
@@ -97253,14 +97272,6 @@ function getBuildSettings() {
         }
     }
     return settings;
-}
-function buildPreviewUrl(consoleUrl, assetName, model) {
-    const baseUrl = consoleUrl.endsWith("/") ? consoleUrl : `${consoleUrl}/`;
-    const url = new URL("preview", baseUrl);
-    url.searchParams.set("asset", assetName);
-    url.searchParams.set("platform", src_platform);
-    url.searchParams.set("model", model);
-    return url.toString();
 }
 function getPreviewLabels(owner, repo, prNumber) {
     return {
@@ -97532,7 +97543,10 @@ async function runMain() {
     finally {
         await cleanupXcodeInstances(client, labelSelector);
     }
-    const previewUrl = buildPreviewUrl(consoleUrl, assetName, previewModel);
+    const previewUrl = buildPreviewUrl(consoleUrl, assetName, previewModel, {
+        env: getInput("env", { trimWhitespace: false }),
+        openUrl: getInput("open-url"),
+    });
     info(`Preview URL: ${previewUrl}`);
     setOutput("preview-url", previewUrl);
     setOutput("asset-name", assetName);
