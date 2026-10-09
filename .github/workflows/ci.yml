@@ -21,4 +21,5 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: env STATE_is-post-run=true INPUT_API-KEY=test node dist/index.js
       - run: git diff --exit-code -- dist
