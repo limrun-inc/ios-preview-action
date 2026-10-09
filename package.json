@@ -1,6 +1,6 @@
 {
   "name": "ios-preview-action",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "build": "ncc build src/index.ts -o dist --source-map --license licenses.txt",
