@@ -42,6 +42,29 @@ with:
   api-key: ${{ secrets.LIM_API_KEY }}
 ```
 
+## Configure the preview app
+
+Set app environment variables with the multiline `env` input. Use `open-url`
+to open a URL or app deep link after the app launches:
+
+```yaml
+with:
+  api-key: ${{ secrets.LIM_API_KEY }}
+  env: |
+    API_URL=https://api.example.com
+    FEATURE_FLAG=1
+  open-url: 'myapp://checkout?item=123&source=preview'
+```
+
+Each nonblank `env` line uses `KEY=VALUE` syntax. `KEY=` sets an empty value;
+if a key appears more than once, the last value wins. Values can contain `=`.
+Pass values and URLs as plain text; the action URL-encodes them. These inputs
+work with both Xcode and Bazel builds and configure the app when a reviewer
+opens the preview.
+
+Use nonsecret values: the generated URL appears in the PR comment, action
+output, logs, and browser history.
+
 ## Images and videos in the pull request
 
 The action can show images and videos produced by earlier workflow steps in
@@ -127,6 +150,8 @@ concurrency:
 | `scheme` | No | | The scheme to build. |
 | `sdk` | No | `iphonesimulator` | The SDK to build. |
 | `model` | No | `iphone` | The iOS simulator model to use for previews. Supported values: `iphone` or `ipad`. |
+| `env` | No | | Newline-delimited `KEY=VALUE` app environment variables, included in the preview URL. |
+| `open-url` | No | | URL or app deep link to open after the preview app launches. |
 | `xcode-version` | No | sandbox default | Xcode major to build with, e.g. `27` (the CI equivalent of `lim xcode version set`). Switches the sandbox when it has another major selected (the other version's build cache is invalidated, so the next build starts cold). |
 | `build-settings` | No | | Newline-delimited `KEY=VALUE` Xcode build settings for the preview build. Allowlisted safe settings (currently `SWIFT_ACTIVE_COMPILATION_CONDITIONS`) plus any `APP_CONFIG_*` key. |
 | `api-key` | Yes | | Limrun API key. Pass as a secret: `${{ secrets.LIM_API_KEY }}` |

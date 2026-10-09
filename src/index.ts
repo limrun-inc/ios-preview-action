@@ -14,6 +14,7 @@ import { existsSync, statSync } from "fs";
 import { join, resolve } from "path";
 import { postOrUpdateComment, updateCommentClosed } from "./comment";
 import { attachMediaToPullRequest } from "./media";
+import { buildPreviewUrl } from "./preview-url";
 
 const IS_POST_RUN_STATE = "is-post-run";
 const CLEANUP_LABEL_SELECTOR_STATE = "cleanup-label-selector";
@@ -85,15 +86,6 @@ function getBuildSettings(): Record<string, string> | undefined {
     }
   }
   return settings;
-}
-
-function buildPreviewUrl(consoleUrl: string, assetName: string, model: PreviewModel): string {
-  const baseUrl = consoleUrl.endsWith("/") ? consoleUrl : `${consoleUrl}/`;
-  const url = new URL("preview", baseUrl);
-  url.searchParams.set("asset", assetName);
-  url.searchParams.set("platform", platform);
-  url.searchParams.set("model", model);
-  return url.toString();
 }
 
 function getPreviewLabels(owner: string, repo: string, prNumber: number): Record<string, string> {
@@ -407,7 +399,10 @@ async function runMain(): Promise<void> {
     await cleanupXcodeInstances(client, labelSelector);
   }
 
-  const previewUrl = buildPreviewUrl(consoleUrl, assetName, previewModel);
+  const previewUrl = buildPreviewUrl(consoleUrl, assetName, previewModel, {
+    env: core.getInput("env", { trimWhitespace: false }),
+    openUrl: core.getInput("open-url"),
+  });
   core.info(`Preview URL: ${previewUrl}`);
   core.setOutput("preview-url", previewUrl);
   core.setOutput("asset-name", assetName);
