@@ -108,7 +108,7 @@ output, logs, and browser history.
 
 When the app needs services in your private network, such as a staging API
 behind a VPN, set `tunnel` to the name of a
-[persistent tunnel](https://docs.limrun.com/docs/ci/persistent-tunnels). The
+[persistent tunnel](https://docs.limrun.com/docs/networking/persistent-tunnels). The
 preview simulator attaches to the tunnel before the app launches, so the
 tunnel's connector must be running when a reviewer opens the preview:
 
