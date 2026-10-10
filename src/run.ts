@@ -56,6 +56,22 @@ function getXcodeVersion(): string | undefined {
   return value;
 }
 
+/**
+ * The persistent tunnel the preview simulator attaches to, or undefined. A
+ * malformed name fails the run before the build, not when a reviewer opens
+ * the preview.
+ */
+function getTunnel(): string | undefined {
+  const value = core.getInput("tunnel").trim();
+  if (!value) return undefined;
+  if (value.length > 63 || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(value)) {
+    throw new Error(
+      `tunnel must be a persistent tunnel's name: lowercase letters, digits and dashes, at most 63 characters, got "${value}"`
+    );
+  }
+  return value;
+}
+
 function getPreviewModel(): PreviewModel {
   const model = (core.getInput("model") || "iphone").trim().toLowerCase();
   if (supportedPreviewModels.includes(model as PreviewModel)) {
@@ -297,6 +313,7 @@ export async function runMain(): Promise<void> {
 
   const previewModel = getPreviewModel();
   const xcodeVersion = getXcodeVersion();
+  const tunnel = getTunnel();
   const buildSettings = getBuildSettings();
   const prepare = core.getInput("prepare", { trimWhitespace: false });
   const snapshot = getSnapshotConfig();
@@ -417,6 +434,7 @@ export async function runMain(): Promise<void> {
   const previewUrl = buildPreviewUrl(consoleUrl, assetName, previewModel, {
     env: core.getInput("env", { trimWhitespace: false }),
     openUrl: core.getInput("open-url"),
+    tunnel,
   });
   core.info(`Preview URL: ${previewUrl}`);
   core.setOutput("preview-url", previewUrl);
