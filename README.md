@@ -106,6 +106,18 @@ opens the preview.
 Use nonsecret values: the generated URL appears in the PR comment, action
 output, logs, and browser history.
 
+When the app needs services in your private network, such as a staging API
+behind a VPN, set `tunnel` to the name of a
+[persistent tunnel](https://docs.limrun.com/docs/ci/persistent-tunnels). The
+preview simulator attaches to the tunnel before the app launches, so the
+tunnel's connector must be running when a reviewer opens the preview:
+
+```yaml
+with:
+  api-key: ${{ secrets.LIM_API_KEY }}
+  tunnel: staging
+```
+
 ## Images and videos in the pull request
 
 The action can show images and videos produced by earlier workflow steps in
@@ -193,6 +205,7 @@ concurrency:
 | `model` | No | `iphone` | The iOS simulator model to use for previews. Supported values: `iphone` or `ipad`. |
 | `env` | No | | Newline-delimited `KEY=VALUE` app environment variables, included in the preview URL. |
 | `open-url` | No | | URL or app deep link to open after the preview app launches. |
+| `tunnel` | No | | Name of a persistent tunnel the preview simulator attaches to before the app launches. Its connector must be running when a reviewer opens the preview. |
 | `xcode-version` | No | sandbox default | Xcode major to build with, e.g. `27` (the CI equivalent of `lim xcode version set`). Switches the sandbox when it has another major selected (the other version's build cache is invalidated, so the next build starts cold). |
 | `prepare` | No | | Remote shell script after source sync and before xcodebuild. Failure stops the build. |
 | `snapshot-key` | No | | Snapshot publication key; also the default restore key. |
