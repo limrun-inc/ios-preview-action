@@ -47,3 +47,12 @@ test("supports env without open-url", () => {
   assert.deepEqual(url.searchParams.getAll("env"), ["FEATURE_FLAG=1", "EMPTY="]);
   assert.equal(url.searchParams.has("openUrl"), false);
 });
+
+test("names a persistent tunnel after the other launch options", () => {
+  const url = new URL(buildPreviewUrl("https://console.limrun.com", "app", "iphone", {
+    openUrl: "myapp://home",
+    tunnel: "staging",
+  }));
+  assert.equal(url.searchParams.get("tunnel"), "staging");
+  assert.deepEqual([...url.searchParams.keys()], ["asset", "platform", "model", "openUrl", "tunnel"]);
+});

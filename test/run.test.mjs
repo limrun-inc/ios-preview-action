@@ -156,3 +156,15 @@ test("Bazel rejects preparation and snapshot inputs before creating a sandbox", 
     assert.equal(calls.some(([kind]) => kind === "create"), false);
   } finally { rmSync(dir, { recursive: true }); }
 });
+
+test("names the persistent tunnel in the preview link", async () => {
+  inputs.tunnel = "staging";
+  await runMain();
+  assert.equal(new URL(outputs["preview-url"]).searchParams.get("tunnel"), "staging");
+});
+
+test("a malformed tunnel name fails before creating a sandbox", async () => {
+  inputs.tunnel = "Staging_1";
+  await assert.rejects(runMain(), /tunnel must be a persistent tunnel's name/);
+  assert.deepEqual(calls, []);
+});
