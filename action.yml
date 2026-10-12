@@ -38,7 +38,7 @@ inputs:
     required: false
     default: ''
   tunnel:
-    description: 'Name of a persistent tunnel the preview simulator attaches to before the app launches, so the app reaches services in your private network. The tunnel''s connector must be running when a reviewer opens the preview.'
+    description: 'Name of a private tunnel the preview simulator attaches to before the app launches, so the app reaches services in your private network. The tunnel''s connector must be running when a reviewer opens the preview.'
     required: false
     default: ''
   xcode-version:
