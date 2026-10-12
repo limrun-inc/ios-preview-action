@@ -48,7 +48,7 @@ test("supports env without open-url", () => {
   assert.equal(url.searchParams.has("openUrl"), false);
 });
 
-test("names a persistent tunnel after the other launch options", () => {
+test("names a private tunnel after the other launch options", () => {
   const url = new URL(buildPreviewUrl("https://console.limrun.com", "app", "iphone", {
     openUrl: "myapp://home",
     tunnel: "staging",

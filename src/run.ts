@@ -57,7 +57,7 @@ function getXcodeVersion(): string | undefined {
 }
 
 /**
- * The persistent tunnel the preview simulator attaches to, or undefined. A
+ * The private tunnel the preview simulator attaches to, or undefined. A
  * malformed name fails the run before the build, not when a reviewer opens
  * the preview.
  */
@@ -66,7 +66,7 @@ function getTunnel(): string | undefined {
   if (!value) return undefined;
   if (value.length > 63 || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(value)) {
     throw new Error(
-      `tunnel must be a persistent tunnel's name: lowercase letters, digits and dashes, at most 63 characters, got "${value}"`
+      `tunnel must be a private tunnel's name: lowercase letters, digits and dashes, at most 63 characters, got "${value}"`
     );
   }
   return value;
