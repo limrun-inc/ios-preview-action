@@ -100098,6 +100098,11 @@ function buildPreviewUrl(consoleUrl, assetName, model, options = {}) {
     if (options.tunnel) {
         url.searchParams.set("tunnel", options.tunnel);
     }
+    // The key is a name, never a secret: the link is posted on the PR for everyone. Who the saved
+    // state belongs to comes from the reviewer's console login when they open it.
+    if (options.deviceState) {
+        url.searchParams.set("deviceState", options.deviceState);
+    }
     return url.toString();
 }
 
@@ -100218,6 +100223,20 @@ function getTunnel() {
         return undefined;
     if (value.length > 63 || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(value)) {
         throw new Error(`tunnel must be a private tunnel's name: lowercase letters, digits and dashes, at most 63 characters, got "${value}"`);
+    }
+    return value;
+}
+/**
+ * The key reviewers' saved simulator state is kept under, or undefined. The
+ * key rides in the preview link and becomes a URL path segment on the API, so
+ * it is checked here with the same rule the server applies.
+ */
+function getDeviceStateKey() {
+    const value = getInput("device-state-key").trim();
+    if (!value)
+        return undefined;
+    if (value.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._@:+-]*$/.test(value)) {
+        throw new Error(`device-state-key must be letters, digits and . _ - @ : + after the first character, at most 128 characters, got "${value}"`);
     }
     return value;
 }
@@ -100436,6 +100455,7 @@ async function runMain() {
     const previewModel = getPreviewModel();
     const xcodeVersion = getXcodeVersion();
     const tunnel = getTunnel();
+    const deviceStateKey = getDeviceStateKey();
     const buildSettings = getBuildSettings();
     const prepare = getInput("prepare", { trimWhitespace: false });
     const snapshot = getSnapshotConfig();
@@ -100545,6 +100565,7 @@ async function runMain() {
         env: getInput("env", { trimWhitespace: false }),
         openUrl: getInput("open-url"),
         tunnel,
+        deviceState: deviceStateKey,
     });
     info(`Preview URL: ${previewUrl}`);
     setOutput("preview-url", previewUrl);

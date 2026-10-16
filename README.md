@@ -206,6 +206,7 @@ concurrency:
 | `env` | No | | Newline-delimited `KEY=VALUE` app environment variables, included in the preview URL. |
 | `open-url` | No | | URL or app deep link to open after the preview app launches. |
 | `tunnel` | No | | Name of a private tunnel the preview simulator attaches to before the app launches. Its connector must be running when a reviewer opens the preview. |
+| `device-state-key` | No | | Name under which each reviewer's simulator state (login, app settings, privacy grants) is saved when they leave a preview and restored on their next one. Usually one key per app. Every reviewer gets their own saved state under the key; it is a name, not a secret. |
 | `xcode-version` | No | sandbox default | Xcode major to build with, e.g. `27` (the CI equivalent of `lim xcode version set`). Switches the sandbox when it has another major selected (the other version's build cache is invalidated, so the next build starts cold). |
 | `prepare` | No | | Remote shell script after source sync and before xcodebuild. Failure stops the build. |
 | `snapshot-key` | No | | Snapshot publication key; also the default restore key. |

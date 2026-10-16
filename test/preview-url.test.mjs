@@ -56,3 +56,17 @@ test("names a private tunnel after the other launch options", () => {
   assert.equal(url.searchParams.get("tunnel"), "staging");
   assert.deepEqual([...url.searchParams.keys()], ["asset", "platform", "model", "openUrl", "tunnel"]);
 });
+
+test("names the device state key last, after the tunnel", () => {
+  const url = new URL(buildPreviewUrl("https://console.limrun.com", "app", "iphone", {
+    tunnel: "staging",
+    deviceState: "myapp",
+  }));
+  assert.equal(url.searchParams.get("deviceState"), "myapp");
+  assert.deepEqual([...url.searchParams.keys()], ["asset", "platform", "model", "tunnel", "deviceState"]);
+});
+
+test("omits the device state key when it is empty", () => {
+  const url = new URL(buildPreviewUrl("https://console.limrun.com", "app", "iphone", { deviceState: "" }));
+  assert.equal(url.searchParams.has("deviceState"), false);
+});
