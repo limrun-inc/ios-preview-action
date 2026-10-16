@@ -72,6 +72,22 @@ function getTunnel(): string | undefined {
   return value;
 }
 
+/**
+ * The key reviewers' saved simulator state is kept under, or undefined. The
+ * key rides in the preview link and becomes a URL path segment on the API, so
+ * it is checked here with the same rule the server applies.
+ */
+function getDeviceStateKey(): string | undefined {
+  const value = core.getInput("device-state-key").trim();
+  if (!value) return undefined;
+  if (value.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._@:+-]*$/.test(value)) {
+    throw new Error(
+      `device-state-key must be letters, digits and . _ - @ : + after the first character, at most 128 characters, got "${value}"`
+    );
+  }
+  return value;
+}
+
 function getPreviewModel(): PreviewModel {
   const model = (core.getInput("model") || "iphone").trim().toLowerCase();
   if (supportedPreviewModels.includes(model as PreviewModel)) {
@@ -314,6 +330,7 @@ export async function runMain(): Promise<void> {
   const previewModel = getPreviewModel();
   const xcodeVersion = getXcodeVersion();
   const tunnel = getTunnel();
+  const deviceStateKey = getDeviceStateKey();
   const buildSettings = getBuildSettings();
   const prepare = core.getInput("prepare", { trimWhitespace: false });
   const snapshot = getSnapshotConfig();
@@ -435,6 +452,7 @@ export async function runMain(): Promise<void> {
     env: core.getInput("env", { trimWhitespace: false }),
     openUrl: core.getInput("open-url"),
     tunnel,
+    deviceState: deviceStateKey,
   });
   core.info(`Preview URL: ${previewUrl}`);
   core.setOutput("preview-url", previewUrl);
