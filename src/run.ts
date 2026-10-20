@@ -21,7 +21,7 @@ import { getSnapshotConfig, restoreSnapshot, deleteWithSnapshot } from "./snapsh
 const IS_POST_RUN_STATE = "is-post-run";
 const CLEANUP_LABEL_SELECTOR_STATE = "cleanup-label-selector";
 const platform = "ios";
-const supportedPreviewModels = ["iphone", "ipad"] as const;
+const supportedPreviewModels = ["iphone", "iphone-duo", "ipad"] as const;
 
 type PreviewModel = (typeof supportedPreviewModels)[number];
 

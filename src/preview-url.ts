@@ -1,7 +1,7 @@
 export function buildPreviewUrl(
   consoleUrl: string,
   assetName: string,
-  model: "iphone" | "ipad",
+  model: "iphone" | "iphone-duo" | "ipad",
   options: { env?: string; openUrl?: string; tunnel?: string } = {}
 ): string {
   const baseUrl = consoleUrl.endsWith("/") ? consoleUrl : `${consoleUrl}/`;

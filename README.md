@@ -38,12 +38,12 @@ jobs:
             APP_CONFIG_DEV_LOGIN_SECRET=${{ secrets.DEV_LOGIN_SECRET }}
 ```
 
-For iPad-specific previews, set the simulator model:
+To preview on an iPhone Duo or an iPad instead of an iPhone, set the simulator model. Each preview link opens its own simulator, so post one link per model when reviewers need both:
 
 ```yaml
 with:
   project-path: .
-  model: ipad
+  model: iphone-duo
   api-key: ${{ secrets.LIM_API_KEY }}
 ```
 
@@ -202,7 +202,7 @@ concurrency:
 | `workspace` | No | | Path to the iOS workspace file to build. |
 | `scheme` | No | | The scheme to build. |
 | `sdk` | No | `iphonesimulator` | The SDK to build. |
-| `model` | No | `iphone` | The iOS simulator model to use for previews. Supported values: `iphone` or `ipad`. |
+| `model` | No | `iphone` | The iOS simulator model to use for previews. Supported values: `iphone`, `iphone-duo` or `ipad`. |
 | `env` | No | | Newline-delimited `KEY=VALUE` app environment variables, included in the preview URL. |
 | `open-url` | No | | URL or app deep link to open after the preview app launches. |
 | `tunnel` | No | | Name of a private tunnel the preview simulator attaches to before the app launches. Its connector must be running when a reviewer opens the preview. |
