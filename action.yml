@@ -26,7 +26,7 @@ inputs:
     required: false
     default: 'iphonesimulator'
   model:
-    description: 'The iOS simulator model to use for previews. Supported values: "iphone" or "ipad".'
+    description: 'The iOS simulator model to use for previews. Supported values: "iphone", "iphone-duo" or "ipad".'
     required: false
     default: 'iphone'
   env:
