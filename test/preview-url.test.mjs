@@ -57,6 +57,13 @@ test("names a private tunnel after the other launch options", () => {
   assert.deepEqual([...url.searchParams.keys()], ["asset", "platform", "model", "openUrl", "tunnel"]);
 });
 
+test("links an iPhone Duo preview", () => {
+  assert.equal(
+    buildPreviewUrl("https://console.limrun.com", "app", "iphone-duo"),
+    "https://console.limrun.com/preview?asset=app&platform=ios&model=iphone-duo"
+  );
+});
+
 test("names the device state key last, after the tunnel", () => {
   const url = new URL(buildPreviewUrl("https://console.limrun.com", "app", "iphone", {
     tunnel: "staging",
