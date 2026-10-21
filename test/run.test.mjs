@@ -168,3 +168,35 @@ test("a malformed tunnel name fails before creating a sandbox", async () => {
   await assert.rejects(runMain(), /tunnel must be a private tunnel's name/);
   assert.deepEqual(calls, []);
 });
+
+for (const name of ["simulator-snapshot-key", "device-state-key"]) {
+  test(`${name} generates a simulatorSnapshot link without changing the Xcode snapshot`, async () => {
+    inputs[name] = "app-{user}";
+    await runMain();
+    const url = new URL(outputs["preview-url"]);
+    assert.equal(url.searchParams.get("simulatorSnapshot"), "app-{user}");
+    assert.equal(url.searchParams.has("deviceState"), false);
+    assert.equal(calls.find(([kind]) => kind === "create")[1].spec.snapshot.key, "pr42");
+  });
+}
+
+test("accepts matching simulator snapshot aliases", async () => {
+  inputs["simulator-snapshot-key"] = inputs["device-state-key"] = "app";
+  await runMain();
+  assert.equal(new URL(outputs["preview-url"]).searchParams.get("simulatorSnapshot"), "app");
+});
+
+test("rejects conflicting simulator snapshot aliases before building", async () => {
+  inputs["simulator-snapshot-key"] = "app";
+  inputs["device-state-key"] = "other";
+  await assert.rejects(runMain(), /must match/);
+  assert.deepEqual(calls, []);
+});
+
+for (const key of ["../app", "a".repeat(129), "app/key"]) {
+  test(`rejects invalid simulator snapshot key ${key}`, async () => {
+    inputs["simulator-snapshot-key"] = key;
+    await assert.rejects(runMain(), /simulator-snapshot-key must/);
+    assert.deepEqual(calls, []);
+  });
+}

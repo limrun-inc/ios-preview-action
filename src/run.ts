@@ -80,13 +80,18 @@ function getTunnel(): string | undefined {
  * reviewer's email address when the link opens, which gives each reviewer their
  * own state under one link.
  */
-function getDeviceStateKey(): string | undefined {
-  const value = core.getInput("device-state-key").trim();
+function getSimulatorSnapshotKey(): string | undefined {
+  const snapshot = core.getInput("simulator-snapshot-key").trim();
+  const legacy = core.getInput("device-state-key").trim();
+  if (snapshot && legacy && snapshot !== legacy) {
+    throw new Error("simulator-snapshot-key and device-state-key must match when both are set");
+  }
+  const value = snapshot || legacy;
   if (!value) return undefined;
   const expanded = value.split("{user}").join("user");
   if (expanded.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._@:+-]*$/.test(expanded)) {
     throw new Error(
-      `device-state-key must be letters, digits and . _ - @ : + after the first character, at most 128 characters, optionally with {user}, got "${value}"`
+      `simulator-snapshot-key must be letters, digits and . _ - @ : + after the first character, at most 128 characters, optionally with {user}, got "${value}"`
     );
   }
   return value;
@@ -334,7 +339,7 @@ export async function runMain(): Promise<void> {
   const previewModel = getPreviewModel();
   const xcodeVersion = getXcodeVersion();
   const tunnel = getTunnel();
-  const deviceStateKey = getDeviceStateKey();
+  const simulatorSnapshotKey = getSimulatorSnapshotKey();
   const buildSettings = getBuildSettings();
   const prepare = core.getInput("prepare", { trimWhitespace: false });
   const snapshot = getSnapshotConfig();
@@ -456,7 +461,7 @@ export async function runMain(): Promise<void> {
     env: core.getInput("env", { trimWhitespace: false }),
     openUrl: core.getInput("open-url"),
     tunnel,
-    deviceState: deviceStateKey,
+    simulatorSnapshot: simulatorSnapshotKey,
   });
   core.info(`Preview URL: ${previewUrl}`);
   core.setOutput("preview-url", previewUrl);

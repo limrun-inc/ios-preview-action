@@ -41,8 +41,12 @@ inputs:
     description: 'Name of a private tunnel the preview simulator attaches to before the app launches, so the app reaches services in your private network. The tunnel''s connector must be running when a reviewer opens the preview.'
     required: false
     default: ''
+  simulator-snapshot-key:
+    description: 'Save and restore simulator app data, keychain, and supported permissions between previews. Keys are shared within your Limrun organization; use myapp-{user} for a separate snapshot per reviewer. Each save replaces the previous snapshot. Maximum 128 characters: start with a letter or digit, then letters, digits, or . _ - @ : +.'
+    required: false
+    default: ''
   device-state-key:
-    description: 'Name under which the simulator state (login, app settings, privacy grants) is saved when a reviewer leaves a preview and restored when the next one opens. The key belongs to your Limrun organization, like an Xcode snapshot key: everyone who opens the link shares one state and the latest save wins. Put {user} in it, e.g. "myapp-{user}", to give each reviewer their own state. Usually one key per app. Letters, digits and . _ - @ : + after the first character, at most 128.'
+    description: 'Deprecated alias for simulator-snapshot-key. If both are set, their values must match.'
     required: false
     default: ''
   xcode-version:
