@@ -206,6 +206,7 @@ concurrency:
 | `env` | No | | Newline-delimited `KEY=VALUE` app environment variables, included in the preview URL. |
 | `open-url` | No | | URL or app deep link to open after the preview app launches. |
 | `tunnel` | No | | Name of a private tunnel the preview simulator attaches to before the app launches. Its connector must be running when a reviewer opens the preview. |
+| `device-state-key` | No | | Name under which the simulator state (login, app settings, privacy grants) is saved when a reviewer leaves a preview and restored on the next one. Shared by everyone in your Limrun organization who uses the key, like an Xcode snapshot key; put `{user}` in it (`myapp-{user}`) to give each reviewer their own state. Usually one per app. The link the action posts is the console preview URL with `deviceState=<key>`; the same URL pasted by hand behaves identically. |
 | `xcode-version` | No | sandbox default | Xcode major to build with, e.g. `27` (the CI equivalent of `lim xcode version set`). Switches the sandbox when it has another major selected (the other version's build cache is invalidated, so the next build starts cold). |
 | `prepare` | No | | Remote shell script after source sync and before xcodebuild. Failure stops the build. |
 | `snapshot-key` | No | | Snapshot publication key; also the default restore key. |

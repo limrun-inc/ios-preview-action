@@ -41,6 +41,10 @@ inputs:
     description: 'Name of a private tunnel the preview simulator attaches to before the app launches, so the app reaches services in your private network. The tunnel''s connector must be running when a reviewer opens the preview.'
     required: false
     default: ''
+  device-state-key:
+    description: 'Name under which the simulator state (login, app settings, privacy grants) is saved when a reviewer leaves a preview and restored when the next one opens. The key belongs to your Limrun organization, like an Xcode snapshot key: everyone who opens the link shares one state and the latest save wins. Put {user} in it, e.g. "myapp-{user}", to give each reviewer their own state. Usually one key per app. Letters, digits and . _ - @ : + after the first character, at most 128.'
+    required: false
+    default: ''
   xcode-version:
     description: 'Xcode major to build with, e.g. "27", the CI equivalent of `lim xcode version set`. Switches the sandbox when it has another major selected (the other version''s build cache is invalidated, so the next build starts cold). Defaults to the sandbox default.'
     required: false
