@@ -70,3 +70,9 @@ test("omits the device state key when it is empty", () => {
   const url = new URL(buildPreviewUrl("https://console.limrun.com", "app", "iphone", { deviceState: "" }));
   assert.equal(url.searchParams.has("deviceState"), false);
 });
+
+test("a {user} placeholder survives the link so the console can expand it", () => {
+  const link = buildPreviewUrl("https://console.limrun.com", "app", "iphone", { deviceState: "myapp-{user}" });
+  assert.ok(link.includes("deviceState=myapp-%7Buser%7D"), link);
+  assert.equal(new URL(link).searchParams.get("deviceState"), "myapp-{user}");
+});

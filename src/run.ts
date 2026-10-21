@@ -73,16 +73,20 @@ function getTunnel(): string | undefined {
 }
 
 /**
- * The key reviewers' saved simulator state is kept under, or undefined. The
- * key rides in the preview link and becomes a URL path segment on the API, so
- * it is checked here with the same rule the server applies.
+ * The key the organization's saved simulator state is kept under, or
+ * undefined. The key rides in the preview link and becomes a URL path segment
+ * on the API, so it is checked here with the rule the server applies. A
+ * `{user}` placeholder is allowed: the console replaces it with the signed-in
+ * reviewer's email address when the link opens, which gives each reviewer their
+ * own state under one link.
  */
 function getDeviceStateKey(): string | undefined {
   const value = core.getInput("device-state-key").trim();
   if (!value) return undefined;
-  if (value.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._@:+-]*$/.test(value)) {
+  const expanded = value.split("{user}").join("user");
+  if (expanded.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._@:+-]*$/.test(expanded)) {
     throw new Error(
-      `device-state-key must be letters, digits and . _ - @ : + after the first character, at most 128 characters, got "${value}"`
+      `device-state-key must be letters, digits and . _ - @ : + after the first character, at most 128 characters, optionally with {user}, got "${value}"`
     );
   }
   return value;

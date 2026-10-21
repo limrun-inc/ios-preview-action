@@ -42,7 +42,7 @@ inputs:
     required: false
     default: ''
   device-state-key:
-    description: 'Name under which each reviewer''s simulator state (login, app settings, privacy grants) is saved when they leave a preview and restored when they open the next one. Usually one key per app, e.g. "myapp". Each reviewer gets their own saved state under the key. Letters, digits and . _ - @ : + after the first character, at most 128.'
+    description: 'Name under which the simulator state (login, app settings, privacy grants) is saved when a reviewer leaves a preview and restored when the next one opens. The key belongs to your Limrun organization, like an Xcode snapshot key: everyone who opens the link shares one state and the latest save wins. Put {user} in it, e.g. "myapp-{user}", to give each reviewer their own state. Usually one key per app. Letters, digits and . _ - @ : + after the first character, at most 128.'
     required: false
     default: ''
   xcode-version:
