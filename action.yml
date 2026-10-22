@@ -42,7 +42,7 @@ inputs:
     required: false
     default: ''
   simulator-snapshot-key:
-    description: 'Save and restore simulator app data, keychain, and supported permissions between previews. Keys are shared within your Limrun organization; use myapp-{user} for a separate snapshot per reviewer. Each save replaces the previous snapshot. Maximum 128 characters: start with a letter or digit, then letters, digits, or . _ - @ : +.'
+    description: 'Save and restore installed simulator apps, their data, keychain, and supported permissions between previews. Keys are shared within your Limrun organization; use myapp-{user} for a separate snapshot per reviewer. Each save replaces the previous snapshot. Maximum 128 characters: start with a letter or digit, then letters, digits, or . _ - @ : +.'
     required: false
     default: ''
   device-state-key:

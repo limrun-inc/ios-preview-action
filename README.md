@@ -206,7 +206,7 @@ concurrency:
 | `env` | No | | Newline-delimited `KEY=VALUE` app environment variables, included in the preview URL. |
 | `open-url` | No | | URL or app deep link to open after the preview app launches. |
 | `tunnel` | No | | Name of a private tunnel the preview simulator attaches to before the app launches. Its connector must be running when a reviewer opens the preview. |
-| `simulator-snapshot-key` | No | | Save and restore simulator app data, keychain, and supported permissions between previews. Use `myapp-{user}` for a separate snapshot per reviewer, or `myapp` to share one within your Limrun organization. Each save replaces the previous snapshot. Adds `simulatorSnapshot=<key>` to the preview URL. Separate from the Xcode workspace `snapshot-key`. |
+| `simulator-snapshot-key` | No | | Save and restore installed simulator apps, their data, keychain, and supported permissions between previews. Use `myapp-{user}` for a separate snapshot per reviewer, or `myapp` to share one within your Limrun organization. Each save replaces the previous snapshot. Adds `simulatorSnapshot=<key>` to the preview URL. Separate from the Xcode workspace `snapshot-key`. |
 | `device-state-key` | No | | Deprecated alias for `simulator-snapshot-key`. If both are set, their values must match. |
 | `xcode-version` | No | sandbox default | Xcode major to build with, e.g. `27` (the CI equivalent of `lim xcode version set`). Switches the sandbox when it has another major selected (the other version's build cache is invalidated, so the next build starts cold). |
 | `prepare` | No | | Remote shell script after source sync and before xcodebuild. Failure stops the build. |
