@@ -100100,18 +100100,27 @@ function buildPreviewUrl(consoleUrl, assetName, model, options = {}) {
     }
     // The key is a name, never a secret: the link is posted on the PR for everyone. Who the saved
     // state belongs to comes from the reviewer's console login when they open it.
-    if (options.deviceState) {
-        url.searchParams.set("deviceState", options.deviceState);
+    if (options.simulatorSnapshot) {
+        url.searchParams.set("snapshot-key", options.simulatorSnapshot);
     }
     return url.toString();
 }
 
 ;// CONCATENATED MODULE: ./src/snapshot.ts
 
+function getSnapshotInput(legacyName) {
+    const name = `xcode-${legacyName}`;
+    const value = getInput(name).trim();
+    const legacy = getInput(legacyName).trim();
+    if (value && legacy && value !== legacy) {
+        throw new Error(`${name} and ${legacyName} must match when both are set`);
+    }
+    return value || legacy;
+}
 function getSnapshotConfig() {
-    const key = getInput("snapshot-key");
-    const restoreKeys = getInput("snapshot-restore-keys").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-    const paths = getInput("snapshot-paths").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+    const key = getSnapshotInput("snapshot-key");
+    const restoreKeys = getSnapshotInput("snapshot-restore-keys").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+    const paths = getSnapshotInput("snapshot-paths").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
     if (!key && !restoreKeys.length && !paths.length)
         return undefined;
     return {
@@ -100234,13 +100243,18 @@ function getTunnel() {
  * reviewer's email address when the link opens, which gives each reviewer their
  * own state under one link.
  */
-function getDeviceStateKey() {
-    const value = getInput("device-state-key").trim();
+function getSimulatorSnapshotKey() {
+    const snapshot = getInput("simulator-snapshot-key").trim();
+    const legacy = getInput("device-state-key").trim();
+    if (snapshot && legacy && snapshot !== legacy) {
+        throw new Error("simulator-snapshot-key and device-state-key must match when both are set");
+    }
+    const value = snapshot || legacy;
     if (!value)
         return undefined;
     const expanded = value.split("{user}").join("user");
     if (expanded.length > 128 || !/^[A-Za-z0-9][A-Za-z0-9._@:+-]*$/.test(expanded)) {
-        throw new Error(`device-state-key must be letters, digits and . _ - @ : + after the first character, at most 128 characters, optionally with {user}, got "${value}"`);
+        throw new Error(`simulator-snapshot-key must be letters, digits and . _ - @ : + after the first character, at most 128 characters, optionally with {user}, got "${value}"`);
     }
     return value;
 }
@@ -100459,7 +100473,7 @@ async function runMain() {
     const previewModel = getPreviewModel();
     const xcodeVersion = getXcodeVersion();
     const tunnel = getTunnel();
-    const deviceStateKey = getDeviceStateKey();
+    const simulatorSnapshotKey = getSimulatorSnapshotKey();
     const buildSettings = getBuildSettings();
     const prepare = getInput("prepare", { trimWhitespace: false });
     const snapshot = getSnapshotConfig();
@@ -100492,7 +100506,7 @@ async function runMain() {
         if (prepare.trim())
             xcodebuildOnly.push("prepare");
         if (snapshot)
-            xcodebuildOnly.push("snapshot inputs");
+            xcodebuildOnly.push("Xcode snapshot inputs");
         if (xcodebuildOnly.length > 0) {
             setFailed(`${xcodebuildOnly.join(", ")} only applies to xcodebuild projects, but project-path is a ` +
                 "Bazel workspace. For Bazel builds, configure via BUILD files or user.limrun.bazelrc.");
@@ -100569,7 +100583,7 @@ async function runMain() {
         env: getInput("env", { trimWhitespace: false }),
         openUrl: getInput("open-url"),
         tunnel,
-        deviceState: deviceStateKey,
+        simulatorSnapshot: simulatorSnapshotKey,
     });
     info(`Preview URL: ${previewUrl}`);
     setOutput("preview-url", previewUrl);

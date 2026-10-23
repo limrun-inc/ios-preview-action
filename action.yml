@@ -41,8 +41,12 @@ inputs:
     description: 'Name of a private tunnel the preview simulator attaches to before the app launches, so the app reaches services in your private network. The tunnel''s connector must be running when a reviewer opens the preview.'
     required: false
     default: ''
+  simulator-snapshot-key:
+    description: 'Save and restore installed simulator apps, their data, keychain, and supported permissions between previews. Keys are shared within your Limrun organization; use myapp-{user} for a separate snapshot per reviewer. Each save replaces the previous snapshot. Maximum 128 characters: start with a letter or digit, then letters, digits, or . _ - @ : +.'
+    required: false
+    default: ''
   device-state-key:
-    description: 'Name under which the simulator state (login, app settings, privacy grants) is saved when a reviewer leaves a preview and restored when the next one opens. The key belongs to your Limrun organization, like an Xcode snapshot key: everyone who opens the link shares one state and the latest save wins. Put {user} in it, e.g. "myapp-{user}", to give each reviewer their own state. Usually one key per app. Letters, digits and . _ - @ : + after the first character, at most 128.'
+    description: 'Deprecated alias for simulator-snapshot-key. If both are set, their values must match.'
     required: false
     default: ''
   xcode-version:
@@ -53,16 +57,28 @@ inputs:
     description: 'Shell script to run in the synced remote workspace before xcodebuild. Stops on failure. Not supported in Bazel mode.'
     required: false
     default: ''
+  xcode-snapshot-key:
+    description: 'Xcode workspace snapshot destination key. Also used for restoration when xcode-snapshot-restore-keys is omitted. Xcodebuild only.'
+    required: false
+    default: ''
+  xcode-snapshot-restore-keys:
+    description: 'Newline-delimited Xcode workspace snapshot keys to try in order. Exact match, then newest prefix match. Xcodebuild only.'
+    required: false
+    default: ''
+  xcode-snapshot-paths:
+    description: 'Newline-delimited project-relative paths to snapshot. Omit for the whole Xcode workspace. Xcodebuild only.'
+    required: false
+    default: ''
   snapshot-key:
-    description: 'Disk snapshot destination key. Also used for restoration when snapshot-restore-keys is omitted. Xcodebuild only.'
+    description: 'Deprecated alias for xcode-snapshot-key. If both are set, their values must match.'
     required: false
     default: ''
   snapshot-restore-keys:
-    description: 'Newline-delimited disk snapshot keys to try in order. Exact match, then newest prefix match. Xcodebuild only.'
+    description: 'Deprecated alias for xcode-snapshot-restore-keys. If both are set, their values must match.'
     required: false
     default: ''
   snapshot-paths:
-    description: 'Newline-delimited project-relative paths to snapshot. Omit for the whole workspace. Xcodebuild only.'
+    description: 'Deprecated alias for xcode-snapshot-paths. If both are set, their values must match.'
     required: false
     default: ''
   build-settings:

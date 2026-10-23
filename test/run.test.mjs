@@ -68,14 +68,14 @@ const { runMain, runPost } = await import("../src/run.ts");
 const { getSnapshotConfig, deleteWithSnapshot } = await import("../src/snapshot.ts");
 
 beforeEach(() => {
-  inputs = { "api-key": "test", "github-token": "test", "snapshot-key": "pr42", prepare: "bundle exec pod install\nxcodegen generate" };
+  inputs = { "api-key": "test", "github-token": "test", "xcode-snapshot-key": "pr42", prepare: "bundle exec pod install\nxcodegen generate" };
   state = {}; calls = []; outputs = {}; instances = []; failure = undefined; finishSave = undefined;
   restorePhase = "restored"; savePhase = "published";
 });
 
 test("restores before sync, prepares before build, and observes publication before deletion", async () => {
-  inputs["snapshot-restore-keys"] = "pr42\nmain\n";
-  inputs["snapshot-paths"] = "Pods\r\n.build\r\n";
+  inputs["xcode-snapshot-restore-keys"] = "pr42\nmain\n";
+  inputs["xcode-snapshot-paths"] = "Pods\r\n.build\r\n";
   await runMain();
   assert.deepEqual(calls.map(([kind]) => kind), ["create", "restore", "sync", "prepare", "build", "watch-save", "delete", "comment"]);
   assert.deepEqual(calls[0][1].spec.snapshot, { key: "pr42", restoreKeys: ["pr42", "main"], paths: ["Pods", ".build"] });
@@ -88,7 +88,7 @@ test("restores before sync, prepares before build, and observes publication befo
 });
 
 test("omitted inputs retain the plain sync-build flow", async () => {
-  delete inputs.prepare; delete inputs["snapshot-key"];
+  delete inputs.prepare; delete inputs["xcode-snapshot-key"];
   await runMain();
   assert.deepEqual(calls.map(([kind]) => kind), ["create", "sync", "build", "delete", "comment"]);
   assert.equal(calls[0][1].spec, undefined);
@@ -117,7 +117,7 @@ for (const phase of ["prepare", "build"]) {
 }
 
 test("restore-only configuration does not wait for publication", async () => {
-  delete inputs["snapshot-key"]; inputs["snapshot-restore-keys"] = "main";
+  delete inputs["xcode-snapshot-key"]; inputs["xcode-snapshot-restore-keys"] = "main";
   await runMain();
   assert.ok(calls.some(([kind]) => kind === "restore"));
   assert.equal(calls.some(([kind]) => kind === "watch-save"), false);
@@ -143,8 +143,8 @@ test("delete failure aborts the publication watcher", async () => {
 
 test("snapshot inputs parse newline lists and leave defaults to the server", () => {
   inputs = {}; assert.equal(getSnapshotConfig(), undefined);
-  inputs = { "snapshot-key": "key" }; assert.deepEqual(getSnapshotConfig(), { key: "key" });
-  inputs = { "snapshot-paths": "Pods\n \n.build" }; assert.deepEqual(getSnapshotConfig(), { paths: ["Pods", ".build"] });
+  inputs = { "xcode-snapshot-key": "key" }; assert.deepEqual(getSnapshotConfig(), { key: "key" });
+  inputs = { "xcode-snapshot-paths": "Pods\n \n.build" }; assert.deepEqual(getSnapshotConfig(), { paths: ["Pods", ".build"] });
 });
 
 test("Bazel rejects preparation and snapshot inputs before creating a sandbox", async () => {
@@ -152,7 +152,7 @@ test("Bazel rejects preparation and snapshot inputs before creating a sandbox", 
   try {
     writeFileSync(join(dir, "MODULE.bazel"), "");
     inputs["project-path"] = dir;
-    await assert.rejects(runMain(), /prepare, snapshot inputs only applies/);
+    await assert.rejects(runMain(), /prepare, Xcode snapshot inputs only applies/);
     assert.equal(calls.some(([kind]) => kind === "create"), false);
   } finally { rmSync(dir, { recursive: true }); }
 });
@@ -167,4 +167,88 @@ test("a malformed tunnel name fails before creating a sandbox", async () => {
   inputs.tunnel = "Staging_1";
   await assert.rejects(runMain(), /tunnel must be a private tunnel's name/);
   assert.deepEqual(calls, []);
+});
+
+for (const name of ["simulator-snapshot-key", "device-state-key"]) {
+  test(`${name} generates a snapshot-key link without changing the Xcode snapshot`, async () => {
+    inputs[name] = "app-{user}";
+    await runMain();
+    const url = new URL(outputs["preview-url"]);
+    assert.equal(url.searchParams.get("snapshot-key"), "app-{user}");
+    assert.equal(url.searchParams.has("deviceState"), false);
+    assert.equal(url.searchParams.has("simulatorSnapshot"), false);
+    assert.equal(calls.find(([kind]) => kind === "create")[1].spec.snapshot.key, "pr42");
+  });
+}
+
+test("accepts matching simulator snapshot aliases", async () => {
+  inputs["simulator-snapshot-key"] = inputs["device-state-key"] = "app";
+  await runMain();
+  assert.equal(new URL(outputs["preview-url"]).searchParams.get("snapshot-key"), "app");
+});
+
+test("rejects conflicting simulator snapshot aliases before building", async () => {
+  inputs["simulator-snapshot-key"] = "app";
+  inputs["device-state-key"] = "other";
+  await assert.rejects(runMain(), /must match/);
+  assert.deepEqual(calls, []);
+});
+
+for (const key of ["../app", "a".repeat(129), "app/key"]) {
+  test(`rejects invalid simulator snapshot key ${key}`, async () => {
+    inputs["simulator-snapshot-key"] = key;
+    await assert.rejects(runMain(), /simulator-snapshot-key must/);
+    assert.deepEqual(calls, []);
+  });
+}
+
+for (const prefix of ["xcode-", ""]) {
+  test(`${prefix || "legacy "}snapshot inputs configure only the Xcode workspace`, async () => {
+    inputs = {
+      "api-key": "test", "github-token": "test",
+      [`${prefix}snapshot-key`]: "workspace",
+      [`${prefix}snapshot-restore-keys`]: "workspace\nmain",
+      [`${prefix}snapshot-paths`]: "Pods\n.build",
+    };
+    await runMain();
+    assert.deepEqual(calls.find(([kind]) => kind === "create")[1].spec.snapshot,
+      { key: "workspace", restoreKeys: ["workspace", "main"], paths: ["Pods", ".build"] });
+    assert.equal(new URL(outputs["preview-url"]).searchParams.has("snapshot-key"), false);
+  });
+}
+
+for (const [name, value] of [
+  ["snapshot-key", "pr42"],
+  ["snapshot-restore-keys", "pr42\nmain"],
+  ["snapshot-paths", "Pods\n.build"],
+]) {
+  test(`accepts matching Xcode ${name} aliases`, async () => {
+    inputs[`xcode-${name}`] = inputs[name] = value;
+    await runMain();
+    assert.ok(outputs["preview-url"]);
+  });
+  test(`rejects conflicting Xcode ${name} aliases before creating a sandbox`, async () => {
+    inputs[`xcode-${name}`] = value;
+    inputs[name] = "other";
+    await assert.rejects(runMain(), /must match when both are set/);
+    assert.deepEqual(calls, []);
+  });
+}
+
+test("a simulator snapshot alone does not enable Xcode workspace snapshots", async () => {
+  delete inputs["xcode-snapshot-key"];
+  inputs["simulator-snapshot-key"] = "app-{user}";
+  await runMain();
+  assert.equal(calls.find(([kind]) => kind === "create")[1].spec, undefined);
+  assert.equal(calls.some(([kind]) => kind === "restore" || kind === "watch-save"), false);
+  assert.equal(new URL(outputs["preview-url"]).searchParams.get("snapshot-key"), "app-{user}");
+});
+
+test("legacy workspace and simulator inputs keep their separate meanings", async () => {
+  delete inputs["xcode-snapshot-key"];
+  inputs["snapshot-key"] = "workspace";
+  inputs["device-state-key"] = "app-{user}";
+  await runMain();
+  assert.equal(calls.find(([kind]) => kind === "create")[1].spec.snapshot.key, "workspace");
+  assert.equal(new URL(outputs["preview-url"]).searchParams.get("snapshot-key"), "app-{user}");
 });

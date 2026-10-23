@@ -32,7 +32,7 @@ jobs:
         with:
           project-path: .
           api-key: ${{ secrets.LIM_API_KEY }}
-          snapshot-key: ios-${{ github.repository_id }}-pr-${{ github.event.pull_request.number }}-workspace
+          xcode-snapshot-key: ios-${{ github.repository_id }}-pr-${{ github.event.pull_request.number }}-workspace
           build-settings: |
             SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) LIMRUN
             APP_CONFIG_DEV_LOGIN_SECRET=${{ secrets.DEV_LOGIN_SECRET }}
@@ -47,6 +47,28 @@ with:
   api-key: ${{ secrets.LIM_API_KEY }}
 ```
 
+## Keep simulator state between previews
+
+Set `simulator-snapshot-key` to restore installed apps, their data, keychain, and
+supported permissions when a reviewer opens a preview. Use `{user}` for a separate
+snapshot per reviewer:
+
+```yaml
+with:
+  api-key: ${{ secrets.LIM_API_KEY }}
+  simulator-snapshot-key: myapp-{user}
+  xcode-snapshot-key: ios-${{ github.repository_id }}-pr-${{ github.event.pull_request.number }}-workspace
+```
+
+The simulator key becomes `snapshot-key` in the Preview URL. The Xcode key
+saves and restores the build workspace. You can use either input
+on its own or both together.
+
+The older `device-state-key` input remains an alias for `simulator-snapshot-key`.
+The older `snapshot-key`, `snapshot-restore-keys`, and `snapshot-paths` inputs remain
+aliases for their `xcode-` equivalents. If you set an input and its alias,
+their values must match.
+
 ## Prepare and reuse the build workspace
 
 Use `prepare` for remote setup or code generation after snapshot restoration and
@@ -56,7 +78,7 @@ source sync, before `xcodebuild`. It uses the same sandbox command API as
 ```yaml
 with:
   api-key: ${{ secrets.LIM_API_KEY }}
-  snapshot-key: ios-${{ github.repository_id }}-pr-${{ github.event.pull_request.number }}-workspace
+  xcode-snapshot-key: ios-${{ github.repository_id }}-pr-${{ github.event.pull_request.number }}-workspace
   prepare: |
     bundle install
     bundle exec pod install
@@ -66,21 +88,21 @@ The script runs with `/bin/sh` and `set -e`. Logs stream to Actions, and a faile
 command stops the build while cleanup still runs. `env` remains app-launch
 configuration; it is not passed to preparation commands.
 
-`snapshot-key` restores the previous workspace and saves it on termination. The
+`xcode-snapshot-key` restores the previous workspace and saves it on termination. The
 first run starts cold. The action waits for restoration before syncing and
 observes publication during cleanup; snapshot failures are reported in the logs.
 A publication failure warns without discarding a successful preview. Failed
 builds may skip publication according to the snapshot service's rules.
 
-Set `snapshot-restore-keys` to an ordered multiline list for fallbacks. If set,
-include the destination key explicitly to try it first. Set `snapshot-paths` to
+Set `xcode-snapshot-restore-keys` to an ordered multiline list for fallbacks. If set,
+include the destination key explicitly to try it first. Set `xcode-snapshot-paths` to
 one project-relative path per line to save selected directories; omit it to keep
 the whole workspace, including source sync state and DerivedData. Use different
 keys for different projects, Xcode versions, or concurrent build configurations.
 See [disk snapshots](https://docs.limrun.com/docs/ios/snapshots) for matching and
 publication behavior.
 
-`prepare` and snapshot inputs apply to xcodebuild projects. Bazel mode rejects
+`prepare` and Xcode snapshot inputs apply to xcodebuild projects. Bazel mode rejects
 them because its build runs from the runner's workspace through remote execution.
 
 ## Configure the preview app
@@ -174,7 +196,7 @@ steps:
       api-key: ${{ secrets.LIM_API_KEY }}
 ```
 
-The xcodebuild-only inputs (`project`, `workspace`, `scheme`, `build-settings`, `prepare`, and snapshot inputs) fail the run when combined with a Bazel workspace; put your flags in `user.limrun.bazelrc` at the workspace root instead.
+The xcodebuild-only inputs (`project`, `workspace`, `scheme`, `build-settings`, `prepare`, and Xcode snapshot inputs) fail the run when combined with a Bazel workspace; put your flags in `user.limrun.bazelrc` at the workspace root instead.
 
 Add a `concurrency` group so rapid pushes to the same PR don't run two builds against the same preview at once:
 
@@ -206,12 +228,16 @@ concurrency:
 | `env` | No | | Newline-delimited `KEY=VALUE` app environment variables, included in the preview URL. |
 | `open-url` | No | | URL or app deep link to open after the preview app launches. |
 | `tunnel` | No | | Name of a private tunnel the preview simulator attaches to before the app launches. Its connector must be running when a reviewer opens the preview. |
-| `device-state-key` | No | | Name under which the simulator state (login, app settings, privacy grants) is saved when a reviewer leaves a preview and restored on the next one. Shared by everyone in your Limrun organization who uses the key, like an Xcode snapshot key; put `{user}` in it (`myapp-{user}`) to give each reviewer their own state. Usually one per app. The link the action posts is the console preview URL with `deviceState=<key>`; the same URL pasted by hand behaves identically. |
+| `simulator-snapshot-key` | No | | Save and restore installed simulator apps, their data, keychain, and supported permissions between previews. Use `myapp-{user}` for a separate snapshot per reviewer, or `myapp` to share one within your Limrun organization. Each save replaces the previous snapshot. Adds `snapshot-key=<key>` to the preview URL. Separate from the Xcode workspace `xcode-snapshot-key`. |
+| `device-state-key` | No | | Deprecated alias for `simulator-snapshot-key`. If both are set, their values must match. |
 | `xcode-version` | No | sandbox default | Xcode major to build with, e.g. `27` (the CI equivalent of `lim xcode version set`). Switches the sandbox when it has another major selected (the other version's build cache is invalidated, so the next build starts cold). |
 | `prepare` | No | | Remote shell script after source sync and before xcodebuild. Failure stops the build. |
-| `snapshot-key` | No | | Snapshot publication key; also the default restore key. |
-| `snapshot-restore-keys` | No | | One restore key per line, tried in order. |
-| `snapshot-paths` | No | Whole workspace | One project-relative snapshot path per line. |
+| `xcode-snapshot-key` | No | | Snapshot publication key; also the default restore key. |
+| `xcode-snapshot-restore-keys` | No | | One restore key per line, tried in order. |
+| `xcode-snapshot-paths` | No | Whole workspace | One project-relative snapshot path per line. |
+| `snapshot-key` | No | | Deprecated alias for `xcode-snapshot-key`. |
+| `snapshot-restore-keys` | No | | Deprecated alias for `xcode-snapshot-restore-keys`. |
+| `snapshot-paths` | No | | Deprecated alias for `xcode-snapshot-paths`. |
 | `build-settings` | No | | Newline-delimited `KEY=VALUE` Xcode build settings for the preview build. Allowlisted safe settings (currently `SWIFT_ACTIVE_COMPILATION_CONDITIONS`) plus any `APP_CONFIG_*` key. |
 | `api-key` | Yes | | Limrun API key. Pass as a secret: `${{ secrets.LIM_API_KEY }}` |
 | `github-token` | No | `${{ github.token }}` | GitHub token for posting PR comments |
