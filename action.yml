@@ -57,16 +57,28 @@ inputs:
     description: 'Shell script to run in the synced remote workspace before xcodebuild. Stops on failure. Not supported in Bazel mode.'
     required: false
     default: ''
+  xcode-snapshot-key:
+    description: 'Xcode workspace snapshot destination key. Also used for restoration when xcode-snapshot-restore-keys is omitted. Xcodebuild only.'
+    required: false
+    default: ''
+  xcode-snapshot-restore-keys:
+    description: 'Newline-delimited Xcode workspace snapshot keys to try in order. Exact match, then newest prefix match. Xcodebuild only.'
+    required: false
+    default: ''
+  xcode-snapshot-paths:
+    description: 'Newline-delimited project-relative paths to snapshot. Omit for the whole Xcode workspace. Xcodebuild only.'
+    required: false
+    default: ''
   snapshot-key:
-    description: 'Disk snapshot destination key. Also used for restoration when snapshot-restore-keys is omitted. Xcodebuild only.'
+    description: 'Deprecated alias for xcode-snapshot-key. If both are set, their values must match.'
     required: false
     default: ''
   snapshot-restore-keys:
-    description: 'Newline-delimited disk snapshot keys to try in order. Exact match, then newest prefix match. Xcodebuild only.'
+    description: 'Deprecated alias for xcode-snapshot-restore-keys. If both are set, their values must match.'
     required: false
     default: ''
   snapshot-paths:
-    description: 'Newline-delimited project-relative paths to snapshot. Omit for the whole workspace. Xcodebuild only.'
+    description: 'Deprecated alias for xcode-snapshot-paths. If both are set, their values must match.'
     required: false
     default: ''
   build-settings:

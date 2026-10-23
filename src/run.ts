@@ -373,7 +373,7 @@ export async function runMain(): Promise<void> {
     const xcodebuildOnly = ["project", "workspace", "scheme"].filter((name) => getOptionalInput(name));
     if (buildSettings) xcodebuildOnly.push("build-settings");
     if (prepare.trim()) xcodebuildOnly.push("prepare");
-    if (snapshot) xcodebuildOnly.push("snapshot inputs");
+    if (snapshot) xcodebuildOnly.push("Xcode snapshot inputs");
     if (xcodebuildOnly.length > 0) {
       core.setFailed(
         `${xcodebuildOnly.join(", ")} only applies to xcodebuild projects, but project-path is a ` +

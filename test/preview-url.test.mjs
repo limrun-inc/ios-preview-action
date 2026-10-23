@@ -69,17 +69,17 @@ test("names the simulator snapshot key last, after the tunnel", () => {
     tunnel: "staging",
     simulatorSnapshot: "myapp",
   }));
-  assert.equal(url.searchParams.get("simulatorSnapshot"), "myapp");
-  assert.deepEqual([...url.searchParams.keys()], ["asset", "platform", "model", "tunnel", "simulatorSnapshot"]);
+  assert.equal(url.searchParams.get("snapshot-key"), "myapp");
+  assert.deepEqual([...url.searchParams.keys()], ["asset", "platform", "model", "tunnel", "snapshot-key"]);
 });
 
 test("omits the simulator snapshot key when it is empty", () => {
   const url = new URL(buildPreviewUrl("https://console.limrun.com", "app", "iphone", { simulatorSnapshot: "" }));
-  assert.equal(url.searchParams.has("simulatorSnapshot"), false);
+  assert.equal(url.searchParams.has("snapshot-key"), false);
 });
 
 test("a {user} placeholder survives the link so the console can expand it", () => {
   const link = buildPreviewUrl("https://console.limrun.com", "app", "iphone", { simulatorSnapshot: "myapp-{user}" });
-  assert.ok(link.includes("simulatorSnapshot=myapp-%7Buser%7D"), link);
-  assert.equal(new URL(link).searchParams.get("simulatorSnapshot"), "myapp-{user}");
+  assert.ok(link.includes("snapshot-key=myapp-%7Buser%7D"), link);
+  assert.equal(new URL(link).searchParams.get("snapshot-key"), "myapp-{user}");
 });

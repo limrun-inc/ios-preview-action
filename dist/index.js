@@ -100101,17 +100101,26 @@ function buildPreviewUrl(consoleUrl, assetName, model, options = {}) {
     // The key is a name, never a secret: the link is posted on the PR for everyone. Who the saved
     // state belongs to comes from the reviewer's console login when they open it.
     if (options.simulatorSnapshot) {
-        url.searchParams.set("simulatorSnapshot", options.simulatorSnapshot);
+        url.searchParams.set("snapshot-key", options.simulatorSnapshot);
     }
     return url.toString();
 }
 
 ;// CONCATENATED MODULE: ./src/snapshot.ts
 
+function getSnapshotInput(legacyName) {
+    const name = `xcode-${legacyName}`;
+    const value = getInput(name).trim();
+    const legacy = getInput(legacyName).trim();
+    if (value && legacy && value !== legacy) {
+        throw new Error(`${name} and ${legacyName} must match when both are set`);
+    }
+    return value || legacy;
+}
 function getSnapshotConfig() {
-    const key = getInput("snapshot-key");
-    const restoreKeys = getInput("snapshot-restore-keys").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-    const paths = getInput("snapshot-paths").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+    const key = getSnapshotInput("snapshot-key");
+    const restoreKeys = getSnapshotInput("snapshot-restore-keys").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+    const paths = getSnapshotInput("snapshot-paths").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
     if (!key && !restoreKeys.length && !paths.length)
         return undefined;
     return {
@@ -100497,7 +100506,7 @@ async function runMain() {
         if (prepare.trim())
             xcodebuildOnly.push("prepare");
         if (snapshot)
-            xcodebuildOnly.push("snapshot inputs");
+            xcodebuildOnly.push("Xcode snapshot inputs");
         if (xcodebuildOnly.length > 0) {
             setFailed(`${xcodebuildOnly.join(", ")} only applies to xcodebuild projects, but project-path is a ` +
                 "Bazel workspace. For Bazel builds, configure via BUILD files or user.limrun.bazelrc.");

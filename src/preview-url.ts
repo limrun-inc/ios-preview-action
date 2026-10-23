@@ -23,7 +23,7 @@ export function buildPreviewUrl(
   // The key is a name, never a secret: the link is posted on the PR for everyone. Who the saved
   // state belongs to comes from the reviewer's console login when they open it.
   if (options.simulatorSnapshot) {
-    url.searchParams.set("simulatorSnapshot", options.simulatorSnapshot);
+    url.searchParams.set("snapshot-key", options.simulatorSnapshot);
   }
   return url.toString();
 }

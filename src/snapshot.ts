@@ -2,10 +2,20 @@ import * as core from "@actions/core";
 import type Limrun from "@limrun/api/index.js";
 import type { XcodeSnapshotConfig } from "@limrun/api/index.js";
 
+function getSnapshotInput(legacyName: string): string {
+  const name = `xcode-${legacyName}`;
+  const value = core.getInput(name).trim();
+  const legacy = core.getInput(legacyName).trim();
+  if (value && legacy && value !== legacy) {
+    throw new Error(`${name} and ${legacyName} must match when both are set`);
+  }
+  return value || legacy;
+}
+
 export function getSnapshotConfig(): XcodeSnapshotConfig | undefined {
-  const key = core.getInput("snapshot-key");
-  const restoreKeys = core.getInput("snapshot-restore-keys").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-  const paths = core.getInput("snapshot-paths").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+  const key = getSnapshotInput("snapshot-key");
+  const restoreKeys = getSnapshotInput("snapshot-restore-keys").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+  const paths = getSnapshotInput("snapshot-paths").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
   if (!key && !restoreKeys.length && !paths.length) return undefined;
   return {
     ...(key && { key }),
